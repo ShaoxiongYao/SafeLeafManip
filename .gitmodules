@@ -1,0 +1,3 @@
+[submodule "edg_push_plan/HortiMapping"]
+	path = edg_push_plan/HortiMapping
+	url = https://github.com/ShaoxiongYao/HortiMapping.git
