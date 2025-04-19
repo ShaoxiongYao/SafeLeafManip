@@ -31,6 +31,7 @@ from copy import deepcopy
 
 import context
 from ssc_lmap.vis_utils import create_arrow_lst, gen_trans_box, bool2color, image_plane2pcd, create_ball
+from ssc_lmap.pts_utils import get_largest_dbscan_component
 from ssc_lmap.branch_completion import BranchCompletion
 from ssc_lmap.grasp_planner import GraspPlanner
 from data.arm_configs import home_angles, qlimits, home_pose
@@ -73,23 +74,11 @@ if __name__ == '__main__':
     fruit_pcd = o3d.io.read_point_cloud(str(obj_data_dir / f'{CLASSES[2]}_pcd.ply'))
     # o3d.visualization.draw_geometries_with_editing([leaf_pcd])
 
-    # Get the largest component of the leaf point cloud using dbscan clustering
-    leaf_labels = np.array(leaf_pcd.cluster_dbscan(eps=args.nn_radius, min_points=30, print_progress=False))
-    nonneg_leaf_labels = leaf_labels[leaf_labels >= 0]
-    max_num_label = np.argmax(np.bincount(nonneg_leaf_labels))
-    leaf_pcd = leaf_pcd.select_by_index(np.where(leaf_labels == max_num_label)[0])
-    o3d.visualization.draw_geometries([leaf_pcd])
-
-    # Get the largest component of the fruit point cloud using dbscan clustering
-    fruit_labels = np.array(fruit_pcd.cluster_dbscan(eps=args.nn_radius, min_points=30, print_progress=False))
-    nonneg_fruit_labels = fruit_labels[fruit_labels >= 0]
-    max_num_label = np.argmax(np.bincount(nonneg_fruit_labels))
-    fruit_pcd = fruit_pcd.select_by_index(np.where(fruit_labels == max_num_label)[0])
-    o3d.visualization.draw_geometries([fruit_pcd])
+    # Preprocess leaf and fruit point clouds
+    leaf_pcd = get_largest_dbscan_component(leaf_pcd, nn_radius=args.nn_radius, min_points=30, vis_pcd=True)
+    fruit_pcd = get_largest_dbscan_component(fruit_pcd, nn_radius=args.nn_radius, min_points=30, vis_pcd=True)
 
     raw_scene_pcd = o3d.io.read_point_cloud(str(obj_data_dir / f'crop_space_merge_pcd.ply'))
-
-    mask_array = np.load(obj_data_dir / 'mask.npy')
     
     fruit_pts = np.array(fruit_pcd.points)
     leaf_pts = np.array(leaf_pcd.points)
