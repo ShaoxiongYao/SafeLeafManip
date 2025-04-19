@@ -22,9 +22,6 @@ from ssc_lmap.embed_deform_graph import NodeGraph
 from ssc_lmap.robot_control.ur5_sim import UR5Sim
 from ssc_lmap.robot_control.ur5_real import UR5Real
 from ssc_lmap.semantic_deepsdf_completion import SemanticDeepSDFCompletion
-from ssc_lmap.realsense_utils import load_intrinsics_from_json, save_intrinsics_from_json
-from ssc_lmap.embed_deform_graph import prepare_sim_obj
-from ssc_lmap.pts_utils import trans_matrix2pose
 from ssc_lmap.octomap_wrapper import OctomapWrapper
 
 import tqdm
@@ -33,27 +30,11 @@ from copy import deepcopy
 
 
 import context
-from ssc_lmap.pts_utils import is_free_frontier_point, sdf_negetive_inside_trimesh
 from ssc_lmap.vis_utils import create_arrow_lst, gen_trans_box, bool2color, image_plane2pcd, create_ball
 from ssc_lmap.branch_completion import BranchCompletion
 from ssc_lmap.grasp_planner import GraspPlanner
 from data.arm_configs import home_angles, qlimits, home_pose
 
-view_params = {	
-    "front" : [ -0.72121813879241847, -0.67127630598545718, 0.17097519498254365 ],
-    "lookat" : [ -0.19298926386875953, 0.74899148655268699, 0.44262800215821724 ],
-    "up" : [ 0.036966100337826095, 0.20917298400491585, 0.97717970209593119 ],
-    "zoom" : 0.27999999999999958
-}
-
-view_params = {	
-    "front" : [ -0.72719746380345296, -0.65442554290856003, 0.20714984293178301 ],
-    "lookat" : [ -0.16539800516476486, 0.737540449204104, 0.41621635030538628 ],
-    "up" : [ 0.10859730785732971, 0.18829519911886816, 0.97608992552680629 ],
-    "zoom" : 0.21999999999999958
-}
-
-color_intr, depth_intr = load_intrinsics_from_json('data/camera_intrinsics.json')
 
 if __name__ == '__main__':
     import argparse
@@ -107,7 +88,6 @@ if __name__ == '__main__':
     # Load camera extrinsic parameters
     camera_params = json.load(open(args.trans_params_fn))
     cam2rob_trans = np.array(camera_params['cam2rob'])
-    rob2cam_trans = np.array(camera_params['rob2cam'])
     cam_center = cam2rob_trans[:3, 3]
 
     obj_data_dir = Path(f'{args.asset_dir}/{args.obj_name}')
@@ -170,11 +150,8 @@ if __name__ == '__main__':
     
     """Scene-consistent shape completion of fruit"""
     # load deep sdf decoder and init latent code
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # DeepSDF_DIR = '/home/user/pan/embed_graph_push_planning/ssc_lmap/HortiMapping/deepsdf/models/sweetpepper_32'
     DeepSDF_DIR = 'ssc_lmap/HortiMapping/deepsdf/models/sweetpepper_32'
-    checkpoint = "latest"
-    semantic_deepsdf = SemanticDeepSDFCompletion(DeepSDF_DIR)
+    semantic_deepsdf = SemanticDeepSDFCompletion(DeepSDF_DIR, checkpoint='latest')
 
     weight_dict = {
         'weight_surface': args.weight_surface,
