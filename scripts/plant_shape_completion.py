@@ -110,11 +110,6 @@ if __name__ == '__main__':
     rob2cam_trans = np.array(camera_params['rob2cam'])
     cam_center = cam2rob_trans[:3, 3]
 
-    arm_sim = UR5Sim('data/robots/ur5_with_robotiq85.rob', num_pcd_pts=5000)
-    arm_sim.close_gripper()
-    arm_sim.set_angles(home_angles)
-    home_arm_pcd = arm_sim.get_arm_pcd()
-
     obj_data_dir = Path(f'{args.asset_dir}/{args.obj_name}')
     branch_pcd = o3d.io.read_point_cloud(str(obj_data_dir / f'{CLASSES[0]}_pcd.ply'))
     leaf_pcd = o3d.io.read_point_cloud(str(obj_data_dir / f'{CLASSES[1]}_pcd.ply'))
@@ -159,26 +154,21 @@ if __name__ == '__main__':
     simplified_completed_branch_mesh = completed_branch_mesh.simplify_quadric_decimation(300)
     o3d.visualization.draw_geometries([completed_branch_pcd, branch_pcd, leaf_pcd, fruit_pcd, completed_branch_mesh])
     # o3d.visualization.draw_geometries([completed_branch_pcd, branch_pcd, leaf_pcd, fruit_pcd, simplified_completed_branch_mesh])
-
-    image = cv2.imread(str(obj_data_dir / 'original_image.jpg'))
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    img_pcd = image_plane2pcd(image, color_intr.width, color_intr.height, z=0)
     
+    """Compute free space points using octomap"""
     octomap_wrapper = OctomapWrapper()
-    
     free_space_pts = octomap_wrapper.compute_free_space_points(raw_scene_pcd, fruit_pts, cam_center,
                                                                args.voxel_size, args.fruit_max_size,
                                                                args.free_space_bbx_scale, args.free_space_layer)
-    
     free_space_pcd = o3d.geometry.PointCloud()
     free_space_pcd.points = o3d.utility.Vector3dVector(free_space_pts)
     
-    
-    # time_stats_dict['init_free_space_time'] = time_free_space_end - time_free_space_start
-
-    o3d.visualization.draw_geometries([free_space_pcd, fruit_pcd, branch_pcd, leaf_pcd])
+    o3d.visualization.draw_geometries([free_space_pcd, fruit_pcd, branch_pcd, leaf_pcd], window_name='Free Space PCD')
     o3d.io.write_point_cloud(str(obj_data_dir / 'free_space_pcd.ply'), free_space_pcd)
+    """End of compute free space points using octomap"""
 
+    
+    """Scene-consistent shape completion of fruit"""
     # load deep sdf decoder and init latent code
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # DeepSDF_DIR = '/home/user/pan/embed_graph_push_planning/ssc_lmap/HortiMapping/deepsdf/models/sweetpepper_32'
@@ -200,14 +190,12 @@ if __name__ == '__main__':
                                               num_correspondence=args.num_correspondence, 
                                               weight_dict=weight_dict, NUM_ITERS=args.NUM_ITERS,
                                               lr=args.lr, output_mesh_res=args.output_mesh_res, verbose=True, vis=True)
-
     fit_fruit_mesh = out_dict['final_shape_mesh']
-    fit_fruit_pcd = fit_fruit_mesh.sample_points_poisson_disk(number_of_points=10000)
-
     time_stats_dict['fit_time'] = out_dict['time']
-
     o3d.io.write_triangle_mesh(str(obj_data_dir / 'fit_fruit_mesh.ply'), fit_fruit_mesh)
-    o3d.io.write_point_cloud(str(obj_data_dir / 'fit_fruit_pcd.ply'), fit_fruit_pcd)
+    """End of scene-consistent shape completion of fruit"""
+
+    # save the shape completion results
     with open(obj_data_dir / 'fit_params.json', 'w') as f:
         fit_params = {
             'translation': out_dict['translation'].tolist(),
