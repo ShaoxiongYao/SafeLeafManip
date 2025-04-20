@@ -11,6 +11,14 @@ import matplotlib.pyplot as plt
 from .vis_utils import create_cylinder_between_two_points, create_ball, create_motion_lines, create_arrow_lst, display_inlier_outlier
 from .pts_utils import distance_point_to_line, average_distance_points_to_line
 
+from dataclasses import dataclass
+
+@dataclass
+class BranchCompletionConfig:
+    """Branch shape completion config dataclass"""
+    cylinder_resolution: float  
+    """float, the resolution of the cylinder mesh"""
+
 class OutputCapturer(io.StringIO):
     """A context manager to capture stdout output"""
     def __enter__(self):
@@ -257,7 +265,8 @@ class BranchCompletion:
         """
         branch_pcd_copy = deepcopy(branch_pcd)
         cl, ind = branch_pcd_copy.remove_statistical_outlier(nb_neighbors=100, std_ratio=1.0)
-        display_inlier_outlier(branch_pcd_copy, ind)
+        if vis_check:
+            display_inlier_outlier(branch_pcd_copy, ind)
         branch_pcd_copy = branch_pcd_copy.select_by_index(ind)
 
         ds_branch_pcd = branch_pcd_copy.voxel_down_sample(voxel_size=voxel_size)
