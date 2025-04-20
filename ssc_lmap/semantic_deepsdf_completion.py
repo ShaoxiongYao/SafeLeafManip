@@ -11,6 +11,66 @@ from .HortiMapping.wild_completion.mesher import MeshExtractor
 
 from .vis_utils import create_motion_lines
 
+
+from dataclasses import dataclass
+
+@dataclass
+class FitWeightConfig:
+    """
+    Configuration for loss weights used in plant point cloud fitting.
+
+    Attributes:
+        weight_surface (float): Weight for surface alignment loss.
+        weight_negative (float): Weight for penalizing points in free space.
+        weight_peduncle (float): Weight for peduncle connection loss.
+        weight_regularization (float): Weight for regularization term.
+        peduncle_tolerance (float): Distance threshold for peduncle connection.
+        weight_neg_com_branch (float): Weight for penalizing negative branch correspondences.
+    """
+    weight_surface: float
+    weight_negative: float
+    weight_peduncle: float
+    weight_regularization: float
+    peduncle_tolerance: float
+    weight_neg_com_branch: float
+
+    def to_dict(self) -> dict:
+        """Convert the weight configuration to a dictionary format."""
+        return {
+            'weight_surface': self.weight_surface,
+            'weight_negative': self.weight_negative,
+            'weight_peduncle': self.weight_peduncle,
+            'weight_regularization': self.weight_regularization,
+            'peduncle_tolerance': self.peduncle_tolerance,
+            'weight_neg_com_branch': self.weight_neg_com_branch
+        }
+
+@dataclass
+class FruitCompletionConfig:
+    """
+    Configuration for fitting fruit point cloud using scene-consistent DeepSDF.
+
+    Attributes:
+        deepsdf_dir (str): Directory containing the DeepSDF model.
+        weights (FitWeightConfig): Loss weight configuration.
+        opt_mesh_res (float): Resolution of the mesh used during optimization.
+        fruit_min_size (float): Minimum allowable size for the estimated fruit.
+        num_correspondence (int): Number of point correspondences for alignment.
+        NUM_ITERS (int): Number of optimization iterations.
+        lr (float): Learning rate used during optimization.
+        output_mesh_res (float): Resolution of the final output mesh.
+    """
+    deepsdf_dir: str
+    weights: FitWeightConfig
+    opt_mesh_res: float
+    fruit_min_size: float
+    num_correspondence: int
+    NUM_ITERS: int
+    lr: float
+    output_mesh_res: float
+
+
+
 def decode_sdf(decoder: torch.nn.Module, lat_vec: torch.Tensor, 
                x: torch.Tensor, max_batch=64**3, with_grad=False) -> torch.Tensor:
     """
@@ -66,21 +126,22 @@ class SemanticDeepSDFCompletion:
     DeepSDF shape completion with scene-consistent constraints.
     
     Attributes:
-        deepsdf_dir (str): The directory of the DeepSDF model.
+        completion_config (FruitCompletionConfig): Configuration for fruit completion.
         checkpoint (str): The checkpoint name, default is 'latest'.
         device (torch.device): The device to run the model on.
         decoder (torch.nn.Module): The DeepSDF decoder.
         init_latent (torch.Tensor): The initial latent code.
         code_len (int): The length of the latent code.
     """
-    def __init__(self, deepsdf_dir:str, checkpoint:str='latest'):
-        self.deepsdf_dir = deepsdf_dir
+    def __init__(self, completion_config: FruitCompletionConfig, checkpoint:str='latest'):
+        self.config = completion_config
         self.checkpoint = checkpoint
+        deepsdf_dir = completion_config.deepsdf_dir
 
         # load deep sdf decoder and init latent code
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        self.decoder:torch.nn.Module = config_decoder(self.deepsdf_dir, self.checkpoint)
+        self.decoder:torch.nn.Module = config_decoder(deepsdf_dir, self.checkpoint)
         self.decoder.to(self.device)
 
         latents_train = load_latent_vectors(deepsdf_dir, checkpoint).to(self.device)
@@ -109,10 +170,11 @@ class SemanticDeepSDFCompletion:
         fruit_center = fruit_center + fruit_min_size * move_direction
         return fruit_center
     
-    def fit_plant_pcd(self, fruit_pcd, branch_pcd, original_branch_pcd, leaf_pcd, cam_center:np.ndarray, 
-                      free_space_pcd, voxels_dim:float, fruit_min_size:float, 
-                      num_correspondence:int, weight_dict:dict,
-                      NUM_ITERS:int, lr:float, output_mesh_res:float, 
+    def fit_plant_pcd(self, fruit_pcd, branch_pcd, original_branch_pcd, leaf_pcd, 
+                      cam_center:np.ndarray, free_space_pcd : o3d.geometry.PointCloud, 
+                      opt_mesh_res:int=None, fruit_min_size:float=None, 
+                      num_correspondence:int=None, weight_dict:dict=None,
+                      NUM_ITERS:int=None, lr:float=None, output_mesh_res:int=None, 
                       verbose=False, vis=False):
         """
         Fit deepSDF model to the plant point cloud
@@ -126,9 +188,8 @@ class SemanticDeepSDFCompletion:
             leaf_pcd (o3d.geometry.PointCloud): Leaf point cloud.
             cam_center (np.ndarray): shape (3,), the camera center.
             free_space_pcd (o3d.geometry.PointCloud): Free space point cloud.
-            voxels_dim (float): Voxel size for the octomap.
+            opt_mesh_res (int): Resolution of the mesh used during optimization.
             fruit_min_size (float): Minimum size of the fruit, used to move the fruit center.
-            
             num_correspondence (int): Number of correspondence points for the peduncle.
             weight_dict (dict): A dictionary containing the weights for the loss functions.
             NUM_ITERS (int): Number of iterations for optimization.
@@ -150,7 +211,7 @@ class SemanticDeepSDFCompletion:
 
         # Compute the center of the fruit moved along the camera center direction
         fruit_color_mean = np.mean(np.asarray(fruit_pcd.colors), axis=0)
-        fruit_center = self.get_fruit_center(fruit_pcd, cam_center, fruit_min_size)
+        fruit_center = self.get_fruit_center(fruit_pcd, cam_center, self.config.fruit_min_size)
 
         # translation
         t = torch.tensor(fruit_center, dtype=torch.float32, requires_grad=True)
@@ -172,8 +233,9 @@ class SemanticDeepSDFCompletion:
         object_radius_max_m = 0.08
 
         mesh_extractor = MeshExtractor(self.decoder, code_len=self.code_len, 
-                                       voxels_dim=voxels_dim, cube_radius=object_radius_max_m) # mc res: 0.2/40 ~ 5mm
-        # init_shape_mesh = mesh_extractor.complete_mesh(init_latent, torch.eye(4), [fruit_color_mean[0], fruit_color_mean[1], fruit_color_mean[2]])
+                                       voxels_dim=self.config.opt_mesh_res, 
+                                       cube_radius=object_radius_max_m) # mc res: 0.2/40 ~ 5mm
+        # init_shape_mesh = mesh_extractor.complete_mesh(init_latent, torch.eye(4), fruit_color_mean.tolist())
 
         # init surface points for optimization
         init_fruit_pts = np.asarray(fruit_pcd.points)
@@ -185,20 +247,15 @@ class SemanticDeepSDFCompletion:
         # init negative complete points for optimization
         init_completed_branch_pts = np.array(branch_pcd.points)
 
-        optimizer = torch.optim.Adam([t, r, s, latent], lr=lr)
+        optimizer = torch.optim.Adam([t, r, s, latent], lr=self.config.lr)
         # optimizer = torch.optim.Adam([t, r, s], lr=lr)
 
         loss_lst = []
-
-        weight_surface = weight_dict['weight_surface']
-        weight_negative = weight_dict['weight_negative']
-        weight_peduncle = weight_dict['weight_peduncle']
-        weight_regularization = weight_dict['weight_regularization']
-        peduncle_tolerance = weight_dict['peduncle_tolerance']
-        weight_neg_com_branch = weight_dict['weight_neg_com_branch']
+        
+        weights = self.config.weights
 
         time_start = time.time()
-        for iter in range(NUM_ITERS):
+        for iter in range(self.config.NUM_ITERS):
             ###### optimize the latent with t, r, s with losses ######
             iter_start_time = time.time()
             
@@ -262,7 +319,7 @@ class SemanticDeepSDFCompletion:
                                                               [fruit_color_mean[0], fruit_color_mean[1], fruit_color_mean[2]])
             current_peduncle_pts = np.asarray(current_shape_mesh.vertices)
             # select num_correspondence peduncle points from the max z points
-            current_peduncle_pts = current_peduncle_pts[np.argsort(current_peduncle_pts[:, 2])[-num_correspondence:], :]
+            current_peduncle_pts = current_peduncle_pts[np.argsort(current_peduncle_pts[:, 2])[-self.config.num_correspondence:], :]
             # move peduncle points to the world coordinate
             current_peduncle_tsr = torch.tensor(current_peduncle_pts, dtype=torch.float32)
             # rescale using s
@@ -282,7 +339,7 @@ class SemanticDeepSDFCompletion:
             # compute loss_peduncle using the current peduncle points by l2 loss
             loss_peduncle = torch.sum((current_peduncle_tsr - match_branch_tsr) ** 2)
             loss_peduncle /= len(match_branch_tsr)
-            if loss_peduncle < peduncle_tolerance:
+            if loss_peduncle < weights.peduncle_tolerance:
                 loss_peduncle = torch.tensor(0.0)
             # print ('loss_peduncle:', loss_peduncle)
 
@@ -292,11 +349,11 @@ class SemanticDeepSDFCompletion:
 
             # compute total loss
             # loss = loss_surface + loss_negative + loss_regularization + loss_peduncle
-            loss = weight_surface * loss_surface \
-                + weight_negative * loss_negative \
-                + weight_peduncle * loss_peduncle \
-                + weight_regularization * loss_regularization \
-                + weight_neg_com_branch * loss_neg_com_branch
+            loss = weights.weight_surface * loss_surface \
+                + weights.weight_negative * loss_negative \
+                + weights.weight_peduncle * loss_peduncle \
+                + weights.weight_regularization * loss_regularization \
+                + weights.weight_neg_com_branch * loss_neg_com_branch
             print ('total loss:', loss)
 
             # if vis and (iter+1) % 50 == 0:
@@ -349,7 +406,8 @@ class SemanticDeepSDFCompletion:
 
         # visualize the result
         final_mesh_extractor = MeshExtractor(self.decoder, code_len=self.code_len, 
-                                             voxels_dim=output_mesh_res, cube_radius=object_radius_max_m) # mc res: 0.2/40 ~ 5mm
+                                             voxels_dim=self.config.output_mesh_res, 
+                                             cube_radius=object_radius_max_m) # mc res: 0.2/40 ~ 5mm
         
         fruit_color_mean_list = [fruit_color_mean[0], fruit_color_mean[1], fruit_color_mean[2]]
         final_shape_mesh = final_mesh_extractor.complete_mesh(latent, torch.eye(4), fruit_color_mean_list)
