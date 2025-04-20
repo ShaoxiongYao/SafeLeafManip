@@ -27,29 +27,3 @@ fruit_completion:
     peduncle_tolerance: 0.0
     weight_neg_com_branch: 0.1
 
-# --voxel_size 0.003 --fruit_min_size 0.01 --fruit_max_size 0.05\
-# --free_space_layer 0 --free_space_bbx_scale 1.5 --nn_radius \
-# --NUM_ITERS 300 --lr 0.01 --num_correspondence 10 
-
-# parser.add_argument('--segment_dir', type=str, help='plant segmentation directory, should contains fruit, leaf, branch pcd')
-# parser.add_argument('--shape_complete_dir', type=str, help='plant shape completion output directory')
-# parser.add_argument('--shape_complete_config', type=str, default='configs/plant_shape_completion.yaml', 
-#                     help='plant shape completion config file describing the parameters for the completion')
-# parser.add_argument('--trans_params_fn', type=str, default='data/tripod_finetune_params1.json')
-# parser.add_argument('--voxel_size', type=float, default=0.003)
-# parser.add_argument('--free_space_layer', type=int, default=1)
-# parser.add_argument('--free_space_bbx_scale', type=float, default=1.5)
-# parser.add_argument('--fruit_min_size', type=float, default=0.01)
-# parser.add_argument('--fruit_max_size', type=float, default=0.05)
-# parser.add_argument('--NUM_ITERS', type=int, default=300)
-# parser.add_argument('--lr', type=float, default=0.01)
-# parser.add_argument('--num_correspondence', type=int, default=10)
-# parser.add_argument('--weight_surface', type=float, default=1.0)
-# parser.add_argument('--weight_negative', type=float, default=2.0)
-# parser.add_argument('--weight_peduncle', type=float, default=0.1)
-# parser.add_argument('--weight_regularization', type=float, default=0.001)
-# parser.add_argument('--peduncle_tolerance', type=float, default=0.0001)
-# parser.add_argument('--weight_neg_com_branch', type=float, default=0.1)
-# parser.add_argument('--opt_mesh_res', type=int, default=16)
-# parser.add_argument('--output_mesh_res', type=int, default=128)
-# parser.add_argument('--nn_radius', type=float, default=0.020)
