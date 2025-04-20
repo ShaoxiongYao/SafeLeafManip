@@ -6,6 +6,23 @@ import octomap
 
 from .pts_utils import is_free_frontier_point
 
+from dataclasses import dataclass
+
+@dataclass
+class FreeSpaceConfig:
+    """
+    Configurations to compute free space points around the fruit.
+    Attributes:
+        voxel_size (float): The voxel size for the octomap.
+        free_space_bbx_scale (float): The scale for the bounding box of the free space.
+        free_space_layer (int): The layer of the free space.
+        fruit_max_size (float): The maximum size of the fruit.
+    """
+    voxel_size: float
+    free_space_bbx_scale: float
+    free_space_layer: int
+    fruit_max_size: float
+
 class OctomapWrapper:
     
     def __init__(self):
