@@ -1,6 +1,6 @@
 preprocess:
   dbscan_eps: 0.008
-  dbscan_min_points: 10
+  dbscan_min_points: 30
 
 free_space:
   voxel_size: 0.003
