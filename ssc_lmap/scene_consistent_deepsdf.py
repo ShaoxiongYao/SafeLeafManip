@@ -121,7 +121,7 @@ def decode_sdf(decoder: torch.nn.Module, lat_vec: torch.Tensor,
     return sdf_values
 
 
-class SemanticDeepSDFCompletion:
+class SceneConsistentDeepSDF:
     """
     DeepSDF shape completion with scene-consistent constraints.
     
