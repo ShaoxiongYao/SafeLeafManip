@@ -25,13 +25,6 @@ from yaml import safe_load
 import dacite
 
 
-view_params = {	
-    "front" : [ -0.72719746380345296, -0.65442554290856003, 0.20714984293178301 ],
-    "lookat" : [ -0.16539800516476486, 0.737540449204104, 0.41621635030538628 ],
-    "up" : [ 0.10859730785732971, 0.18829519911886816, 0.97608992552680629 ],
-    "zoom" : 0.21999999999999958
-}
-
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
@@ -57,6 +50,7 @@ if __name__ == '__main__':
     simulator_config = dacite.from_dict(PlantSimulatorConfig, simulate_action_config['plant_simulator'])
     octomap_config = simulate_action_config['octomap']
     action_config = dacite.from_dict(PullActionConfig, simulate_action_config['action'])
+    view_params = simulate_action_config['view_params']
 
     segment_dir = Path(args.segment_dir)
     shape_complete_dir = Path(args.shape_complete_dir)
@@ -133,10 +127,6 @@ if __name__ == '__main__':
                 energy = node_graph.energy(node_graph.handle_idx, handle_pts_tsr)
                 np.save(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_energy.npy', energy.item())
                 final_energy_lst.append(energy.item())
-                
-                # Visualize energy changes
-                # plt.plot(energy_list)
-                # plt.show()
                 
                 # Visualize deformed graph
                 curr_sim_pcd = node_graph.get_pcd(handle_idx=node_graph.handle_idx, handle_pts_tsr=handle_pts_tsr)
