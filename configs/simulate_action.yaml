@@ -1,0 +1,25 @@
+preprocess:
+  dbscan_eps: 0.008
+  dbscan_min_points: 30
+
+grasp_planner:
+  obstacle_distance_threshold: 0.06
+  object_boundary_threshold: 0.01
+  approach_distance: 0.01
+  num_cvx_samples: 15
+
+plant_simulator:
+  num_box_pts: 25
+  close_branch_distance: 0.05
+  graph_voxel_size: 0.005
+  nn_radius: 0.008
+
+  deform_iters: 300
+  energy_converge_threshold: 0.00001
+
+action:
+  move_min_dist: 0.00
+  move_max_dist: 0.08
+  move_steps: 4
+  
+
