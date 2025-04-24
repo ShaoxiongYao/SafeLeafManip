@@ -24,6 +24,11 @@ class FreeSpaceConfig:
     fruit_max_size: float
 
 class OctomapWrapper:
+    """
+    A wrapper class for octomap to compute free space points and visible points.
+    This class provides utility functions to compute free space points around the fruit
+    and visible points in the octomap.
+    """
     
     def __init__(self):
         pass
@@ -95,3 +100,69 @@ class OctomapWrapper:
             print ('free space time:', time_free_space_end - time_free_space_start)
         
         return free_space_pts
+
+    def compute_visible_points(self, merged_pcd: o3d.geometry.PointCloud,
+                               fit_fruit_pcd: o3d.geometry.PointCloud, cam_center: np.ndarray,
+                               voxel_size: float, verbose: bool=False) -> np.ndarray:
+        """
+        A utility function to compute the visible points in the octomap.
+        
+        This function first creates an octomap and insert merged_pcd into it.
+        Then it uses ray tracing to check if the points in fit_fruit_pcd are visible from the camera center.
+        The function returns the visible points and the octomap points.
+        
+        Args:
+            merged_pcd (o3d.geometry.PointCloud): The merged point cloud.
+            fit_fruit_pcd (o3d.geometry.PointCloud): The fitted fruit point cloud.
+            cam_center (np.ndarray): shape (3,), the camera center.
+            voxel_size (float): The voxel size for the octomap.
+            verbose (bool): If True, print the time taken for ray tracing.
+        
+        Returns:
+            vis_points (np.ndarray): shape (N_vis, 3), the visible points.
+            octo_pts (np.ndarray): shape (N_octo, 3), the octomap points.
+        """
+
+        # copy a octomap scene to add fit points and arm pcd for ray tracing 
+        octomap_scene_copy = octomap.OcTree(voxel_size)
+        for pcd_pt in np.array(merged_pcd.points):
+            octo_pt_key = octomap_scene_copy.coordToKey(pcd_pt)
+            octomap_scene_copy.updateNode(octo_pt_key, octomap_scene_copy.getProbHitLog(), True)
+        octomap_scene_copy.updateInnerOccupancy()
+        
+        # Ray tracing to check if the points are visible
+        start_time = time.time()
+        vis_dict= dict()
+        octo_pts = []
+        for pcd_pt in np.array(fit_fruit_pcd.points):
+            octo_pt_key = octomap_scene_copy.coordToKey(pcd_pt)
+            if tuple([octo_pt_key[0], octo_pt_key[1], octo_pt_key[2]]) in vis_dict:
+                continue
+            octo_pt = octomap_scene_copy.keyToCoord(octo_pt_key)
+            octo_pts.append(octo_pt)
+            # do ray tracing to check if the point is visible
+            origin = octomap_scene_copy.keyToCoord(octomap_scene_copy.coordToKey(cam_center))
+            direction = octo_pt - origin
+            direction /= np.linalg.norm(direction)
+            end_pt = origin
+            hit = octomap_scene_copy.castRay(origin, direction, end_pt, True, 1.5) 
+            if hit:
+                end_pt_key = octomap_scene_copy.coordToKey(end_pt)
+                if end_pt_key == octo_pt_key:
+                    octo_pt_tuple = tuple([octo_pt_key[0], octo_pt_key[1], octo_pt_key[2]])
+                    vis_dict[octo_pt_tuple] = 1
+        if verbose:
+            print('ray tracing time:', time.time() - start_time)
+        
+        octo_pts = np.array(octo_pts)
+    
+        vis_points = []
+        for k in vis_dict.keys():
+            octo_k = octomap.OcTreeKey()
+            octo_k[0] = k[0]
+            octo_k[1] = k[1]
+            octo_k[2] = k[2]
+            vis_points.append(octomap_scene_copy.keyToCoord(octo_k))
+        vis_points = np.array(vis_points)
+        
+        return vis_points, octo_pts
