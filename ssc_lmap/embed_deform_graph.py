@@ -6,11 +6,12 @@ import pypose as pp
 import scipy.sparse as scisp
 import sklearn.neighbors as skn
 from dataclasses import dataclass
+from typing import List
 
 import torch
 from torch import nn
 
-from .vis_utils import scalars_to_colors, gen_trans_box
+from .vis_utils import scalars_to_colors, gen_trans_box, create_arrow_lst
 
 from .pts_utils import connect_points, connect_leaf2branch, select_close_points, assign_edge_weights
 
@@ -383,6 +384,11 @@ class NodeGraph:
             if energy_initial - energy_after < energy_converge_threshold:
                 print('converged at iter:', iter_id, 'with energy_converge_threshold:', energy_converge_threshold)
                 break
+        
+        # Visualize energy changes
+        # plt.plot(energy_list)
+        # plt.show()
+        
         return energy_lst
 
     def get_pts_beta(self, pts:np.ndarray, rbf_sig=0.5, rbf_w_max=0.2, dist_max=0.1):
@@ -445,7 +451,7 @@ class NodeGraph:
         line_set.colors = o3d.utility.Vector3dVector(colors)
         return line_set
 
-    def get_pcd(self, handle_idx=None, handle_pts_tsr:torch.Tensor=None):
+    def get_pcd(self, handle_idx=None, handle_pts_tsr:torch.Tensor=None, color=[0.0, 0.0, 0.0]):
         """
         A utility function to create open3d point cloud for the graph.
         
@@ -456,6 +462,7 @@ class NodeGraph:
         Args:
             handle_idx (np.ndarray): shape (N_h,) array representing the indices of the handle points.
             handle_pts_tsr (torch.Tensor): shape (N_h, 3) tensor representing the handle points.
+            color (list): shape (3,), RGB color for the point cloud.
         
         Returns:
             pcd (open3d.geometry.PointCloud): Point cloud representing the graph.
@@ -469,6 +476,7 @@ class NodeGraph:
 
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(curr_pts_ary)
+        pcd.paint_uniform_color(color)
         
         pcd_colors = np.zeros_like(curr_pts_ary)
         if handle_idx is not None:
@@ -533,6 +541,22 @@ class NodeGraph:
             coord_frame_lst.append(pt_frame)
             coord_frame_lst.append(ref_frame)
         return coord_frame_lst
+
+    def get_deform_arrow_lst(self, handle_idx, handle_pts_tsr:torch.Tensor) -> List:
+        """
+        Create arrow list for the deformed points.
+        The arrow points from rest locations to deformed handle locations.
+        
+        Args:   
+            handle_idx (np.ndarray): shape (N_h,) array representing the indices of the handle points.
+            handle_pts_tsr (torch.Tensor): shape (N_h, 3) tensor representing the handle points.
+        
+        Returns:
+            arrow_lst (list): List of open3d arrow meshes representing the deformed points.
+        """
+        return create_arrow_lst(self.rest_pts_tsr[self.handle_idx].detach().cpu().numpy(), 
+                                handle_pts_tsr.detach().cpu().numpy())
+
 
 @dataclass
 class PlantSimulatorConfig:
