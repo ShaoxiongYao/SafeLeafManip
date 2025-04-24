@@ -21,7 +21,7 @@ from ssc_lmap.segment_plant import CLASSES
 from ssc_lmap.embed_deform_graph import NodeGraph
 from ssc_lmap.robot_control.ur5_sim import UR5Sim
 from ssc_lmap.robot_control.ur5_real import UR5Real
-from ssc_lmap.semantic_deepsdf_completion import SemanticDeepSDFCompletion
+from ssc_lmap.scene_consistent_deepsdf import SceneConsistentDeepSDF
 from ssc_lmap.realsense_utils import load_intrinsics_from_json, save_intrinsics_from_json
 from ssc_lmap.embed_deform_graph import prepare_sim_obj
 from ssc_lmap.pts_utils import trans_matrix2pose
@@ -233,7 +233,7 @@ if __name__ == '__main__':
     # DeepSDF_DIR = '/home/user/pan/embed_graph_push_planning/ssc_lmap/HortiMapping/deepsdf/models/sweetpepper_32'
     DeepSDF_DIR = 'ssc_lmap/HortiMapping/deepsdf/models/sweetpepper_32'
     checkpoint = "latest"
-    semantic_deepsdf = SemanticDeepSDFCompletion(DeepSDF_DIR)
+    semantic_deepsdf = SceneConsistentDeepSDF(DeepSDF_DIR)
 
     weight_dict = {
         'weight_surface': args.weight_surface,
