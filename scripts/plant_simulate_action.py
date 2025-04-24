@@ -14,7 +14,7 @@ import copy
 
 import context
 from ssc_lmap.segment_plant import CLASSES
-from ssc_lmap.grasp_planner import GraspPlanner, GraspPlannerConfig
+from ssc_lmap.grasp_planner import GraspPlanner, GraspPlannerConfig, PullActionConfig
 from ssc_lmap.octomap_wrapper import OctomapWrapper
 from ssc_lmap.vis_utils import create_ball, create_arrow_lst, bool2color
 from ssc_lmap.vis_utils import gen_trans_box, image_plane2pcd, create_ball, vis_grasp_frames
@@ -37,16 +37,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--segment_dir', type=str, help='plant segmentation directory, should contains fruit, leaf, branch pcd')
     parser.add_argument('--shape_complete_dir', type=str, help='plant shape completion output directory')
+    parser.add_argument('--trans_params_fn', type=str, default='data/tripod_finetune_params1.json')
     parser.add_argument('--simulate_action_config', type=str, default='configs/simulate_action.yaml',
                         help='plant action simulation config file describing the parameters for simulation')
     parser.add_argument('--sim_out_dir', type=str, default='data/sim_out', help='output directory for simulation')
-    parser.add_argument('--move_min_dist', type=float, default=0.01)
-    parser.add_argument('--move_max_dist', type=float, default=0.05)
-    parser.add_argument('--move_steps', type=int, default=3)
-    parser.add_argument('--voxel_size', type=float, default=0.003)
-    
-    parser.add_argument('--trans_params_fn', type=str, default='data/tripod_finetune_params1.json')
-    
     args = parser.parse_args()
     
     time_stats_dict = {}
@@ -61,6 +55,8 @@ if __name__ == '__main__':
     preprocess_config = simulate_action_config['preprocess']
     grasp_planner_config = dacite.from_dict(GraspPlannerConfig, simulate_action_config['grasp_planner'])
     simulator_config = dacite.from_dict(PlantSimulatorConfig, simulate_action_config['plant_simulator'])
+    octomap_config = simulate_action_config['octomap']
+    action_config = dacite.from_dict(PullActionConfig, simulate_action_config['action'])
 
     segment_dir = Path(args.segment_dir)
     shape_complete_dir = Path(args.shape_complete_dir)
@@ -80,6 +76,7 @@ if __name__ == '__main__':
     fit_fruit_mesh = o3d.io.read_triangle_mesh(str(shape_complete_dir / 'completed_fruit_mesh.ply'))
     fit_fruit_pcd = fit_fruit_mesh.sample_points_poisson_disk(number_of_points=10000)
 
+    """Plan grasps on segmented plant leaf"""
     grasp_sample_start_time = time.time()
     grasp_planner = GraspPlanner(branch_pcd, config=grasp_planner_config)
     grasp_frame_lst = grasp_planner.plan_grasp_leaf(leaf_pcd, vis_cvx_hull=False, vis_approach_pts=False, 
@@ -89,6 +86,7 @@ if __name__ == '__main__':
     # Visualize grasp frames
     grasp_geom_list = vis_grasp_frames(grasp_frame_lst)
     o3d.visualization.draw_geometries([leaf_pcd, branch_pcd, fruit_pcd] + grasp_geom_list, **view_params)
+    """End of planning grasps"""
 
     sim_out_dir = Path(args.sim_out_dir)
     sim_out_dir.mkdir(parents=True, exist_ok=True)
@@ -134,7 +132,9 @@ if __name__ == '__main__':
             # reset the state of the graph to the initial state
             node_graph.reset_state()
 
-            for move_step_length in np.linspace(args.move_min_dist, args.move_max_dist, num=args.move_steps):
+            for move_step_length in np.linspace(action_config.move_min_dist, 
+                                                action_config.move_max_dist, 
+                                                num=action_config.move_steps):
 
                 move_start_time = time.time()
 
@@ -182,7 +182,7 @@ if __name__ == '__main__':
                 # o3d.visualization.draw_geometries([merged_pcd, fruit_pcd, leaf_pcd, branch_pcd, arm_pcd])
                 
                 vis_points, octo_points = octomap_wrapper.compute_visible_points(merged_pcd, fit_fruit_pcd, cam_center,
-                                                                                 args.voxel_size, verbose=False)
+                                                                                 octomap_config['voxel_size'], verbose=False)
 
                 print('ray casting number visible points:', len(vis_points))
                 np.save(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_num_vis_pts.npy', len(vis_points))
