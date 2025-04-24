@@ -248,6 +248,34 @@ def set_view_params(o3d_vis, view_params={}):
     if "up" in view_params.keys():
         ctr.set_up(view_params["up"])
 
+def vis_grasp_frames(grasp_frame_lst, grasp_frame_size=0.04, 
+                     grasp_ball_radius=0.01, grasp_ball_color=[0.9, 0.3, 0.0]):
+    """
+    Visualize grasp frames.
+    
+    Args:
+        grasp_frame_lst (list): A list of grasp frames, each represented as a 4x4 transformation matrix.
+        grasp_ball_radius (float): The radius of the grasp ball.
+        grasp_ball_color (list): The color of the grasp ball in RGB format.
+    
+    Returns:
+        list: A list of Open3D geometries representing the grasp frames, pregrasp frames, and grasp balls.
+    """
+    
+    all_grasp_coord_frame_lst = []
+    all_pregrasp_coord_frame_lst = []
+    all_grasp_ball_lst = []
+    for grasp_id, grasp_frame in enumerate(grasp_frame_lst):
+        grasp_coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=grasp_frame_size)
+        pregrasp_coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=grasp_frame_size)
+        grasp_coord_frame.transform(grasp_frame)
+        all_grasp_coord_frame_lst.append(grasp_coord_frame)
+        all_pregrasp_coord_frame_lst.append(pregrasp_coord_frame)
+        all_grasp_ball_lst.append(create_ball(radius=grasp_ball_radius, 
+                                              color=grasp_ball_color, center=grasp_frame[:3, 3]))
+    
+    return all_grasp_coord_frame_lst + all_pregrasp_coord_frame_lst + all_grasp_ball_lst
+
 def select_points(pcd, view_params=None):
     """
     Utility function to select points in a point cloud using Open3D's visualizer.
