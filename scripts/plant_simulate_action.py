@@ -4,6 +4,8 @@ import open3d as o3d
 from pathlib import Path
 import torch
 import json
+import os
+import sys
 
 try:
     import octomap
@@ -12,7 +14,8 @@ except:
     pass
 import copy
 
-import context
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from ssc_lmap.segment_plant import CLASSES
 from ssc_lmap.grasp_planner import GraspPlanner, GraspPlannerConfig, PullActionConfig
 from ssc_lmap.octomap_wrapper import OctomapWrapper

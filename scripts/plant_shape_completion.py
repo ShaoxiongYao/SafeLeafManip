@@ -3,13 +3,15 @@ import matplotlib.pyplot as plt
 import open3d as o3d
 import numpy as np
 import cv2
+import os
+import sys
 import time
 from pathlib import Path
 from yaml import safe_load
 import json
-
 import dacite
-import context
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from ssc_lmap.segment_plant import CLASSES
 from ssc_lmap.scene_consistent_deepsdf import SceneConsistentDeepSDF, FruitCompletionConfig
 from ssc_lmap.octomap_wrapper import OctomapWrapper, FreeSpaceConfig
