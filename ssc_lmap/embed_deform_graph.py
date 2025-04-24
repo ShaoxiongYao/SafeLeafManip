@@ -644,6 +644,11 @@ def make_embed_deform_graph(grasp_frame, branch_pcd, leaf_pcd,
     node_graph = NodeGraph(all_sim_pts, connect_ary, edge_weights=edge_weights, 
                            corotate=True, vis_pts=all_vis_pts, device='cuda')
     node_graph.set_handle_idx(handle_idx)
+    
+    if verbose:
+        print('number of nodes:', node_graph.num_pts)
+        print('number of edges:', node_graph.num_edges)
+    
     return node_graph
 
 if __name__ == '__main__':
