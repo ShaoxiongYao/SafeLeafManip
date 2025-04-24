@@ -11,7 +11,7 @@ import json
 import dacite
 import context
 from ssc_lmap.segment_plant import CLASSES
-from ssc_lmap.semantic_deepsdf_completion import SemanticDeepSDFCompletion, FruitCompletionConfig
+from ssc_lmap.scene_consistent_deepsdf import SceneConsistentDeepSDF, FruitCompletionConfig
 from ssc_lmap.octomap_wrapper import OctomapWrapper, FreeSpaceConfig
 from ssc_lmap.pts_utils import get_largest_dbscan_component
 from ssc_lmap.branch_completion import BranchCompletion, BranchCompletionConfig
@@ -91,7 +91,7 @@ if __name__ == '__main__':
     
     """Scene-consistent shape completion of fruit"""
     # load deep sdf decoder and init latent code
-    semantic_deepsdf = SemanticDeepSDFCompletion(fruit_completion_config, checkpoint='latest')
+    semantic_deepsdf = SceneConsistentDeepSDF(fruit_completion_config, checkpoint='latest')
     out_dict = semantic_deepsdf.fit_plant_pcd(fruit_pcd, completed_branch_pcd, branch_pcd, 
                                               leaf_pcd, cam_center, free_space_pcd, verbose=True, vis=True)
     time_stats_dict['fit_time'] = out_dict['time']
