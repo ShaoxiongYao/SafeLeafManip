@@ -5,11 +5,12 @@ import matplotlib.pyplot as plt
 import pypose as pp
 import scipy.sparse as scisp
 import sklearn.neighbors as skn
+from dataclasses import dataclass
 
 import torch
 from torch import nn
 
-from .vis_utils import scalars_to_colors
+from .vis_utils import scalars_to_colors, gen_trans_box
 
 from .pts_utils import connect_points, connect_leaf2branch, select_close_points, assign_edge_weights
 
@@ -152,6 +153,7 @@ class NodeGraph:
         self.node_knn.fit(rest_pts)
         
         self.vis_pts = vis_pts
+        self.vis_beta = self.get_pts_beta(vis_pts, rbf_sig=0.5, rbf_w_max=0.2, dist_max=0.1)
 
         self.setup_graph_matrix()
     
@@ -473,6 +475,29 @@ class NodeGraph:
         pcd.colors = o3d.utility.Vector3dVector(pcd_colors)
 
         return pcd
+    
+    def get_vis_pcd(self, fix_pts_idx=None, color=[0.0, 0.7, 0.7]):
+        """
+        Get current deformed visual point cloud for visualization
+        
+        Args:
+            fix_pts_idx (np.ndarray): shape (N_f,) array representing the indices of the fixed points.
+            color (list): shape (3,), RGB color for the point cloud.
+        
+        Returns:
+            curr_vis_pcd (open3d.geometry.PointCloud): Point cloud containing all points for visualization.
+        """
+        # convert vis points to numpy array
+        delta_vis_pts = self.get_delta_pts().detach().cpu().numpy()
+        vis_pts_delta = self.vis_beta @ delta_vis_pts
+        if fix_pts_idx is not None:
+            vis_pts_delta[fix_pts_idx, :] = 0
+        curr_vis_pts = self.vis_pts + vis_pts_delta
+        
+        curr_vis_pcd = o3d.geometry.PointCloud()
+        curr_vis_pcd.points = o3d.utility.Vector3dVector(curr_vis_pts)
+        curr_vis_pcd.paint_uniform_color(color)
+        return curr_vis_pcd
 
     def get_rot_frames(self, skip_rate = 100):
         """
@@ -507,11 +532,36 @@ class NodeGraph:
             coord_frame_lst.append(pt_frame)
             coord_frame_lst.append(ref_frame)
         return coord_frame_lst
-    
 
-def make_embed_deform_graph(box_start_pcd, branch_pcd, leaf_pcd, 
-                            close_branch_distance=0.05, 
-                            voxel_size=0.003, nn_radius=0.01, 
+@dataclass
+class PlantSimulatorConfig:
+    """
+    Configuration class for to create the embedded deformation graph 
+    to simulate the leaf and branch point clouds.
+    
+    This class is used to store the configuration parameters for the graph.
+    
+    Attributes:
+        num_box_pts (int): Number of points to represent the grasp box.
+        close_branch_distance (float): Distance threshold to collect leaf points close to the branch.
+        graph_voxel_size (float): Voxel size for downsampling the point clouds.
+        nn_radius (float): Radius for nearest neighbor search on the leaf point cloud.
+        leaf2branch_weight (float): Weight for the edges connecting leaf points to branch points.
+        deform_iters (int): Number of iterations to simulate deformation.
+        energy_converge_threshold (float): Threshold for convergence of the energy.
+    """
+    num_box_pts: int = 25
+    close_branch_distance: float = 0.05
+    graph_voxel_size: float = 0.003
+    nn_radius: float = 0.01
+    leaf2branch_weight: float = 100
+    
+    deform_iters: int = 300
+    energy_converge_threshold: float = 0.00001
+
+def make_embed_deform_graph(grasp_frame, branch_pcd, leaf_pcd, 
+                            num_box_pts=25, close_branch_distance=0.05, 
+                            graph_voxel_size=0.003, nn_radius=0.01, 
                             leaf2branch_weight=100, verbose=False) -> NodeGraph:
     """
     Prepare simulator object for the leaf and branch point clouds.
@@ -520,9 +570,10 @@ def make_embed_deform_graph(box_start_pcd, branch_pcd, leaf_pcd,
     box point on the gripper of the robot, branch point cloud, and leaf point cloud.
     
     Args:
-        box_start_pcd (o3d.geometry.PointCloud): Representing grasp points a rectangle box.
+        grasp_frame (np.ndarray): 4x4 matrix representing the grasp frame.
         branch_pcd (o3d.geometry.PointCloud): Point cloud of the branch.
         leaf_pcd (o3d.geometry.PointCloud): Point cloud of the leaf.
+        num_box_pts (int): Number of points to represent the grasp box.
         close_branch_distance (float): Distance threshold to collect leaf points close to the branch.
         voxel_size (float): Voxel size for downsampling the point clouds.
         nn_radius (float): Radius for nearest neighbor search on the leaf point cloud.
@@ -536,6 +587,8 @@ def make_embed_deform_graph(box_start_pcd, branch_pcd, leaf_pcd,
         connect_ary (np.ndarray): shape (M, 2) containing the edges connecting points in the graph.
         edge_weights (np.ndarray): shape (M,) containing weights for the edges in the graph.
     """
+    box_start_pcd = gen_trans_box(0.025, num_box_pts, grasp_frame)
+    
     all_vis_pts = np.vstack([np.array(branch_pcd.points), np.array(leaf_pcd.points)])
 
     all_vis_pcd = o3d.geometry.PointCloud()
@@ -545,8 +598,8 @@ def make_embed_deform_graph(box_start_pcd, branch_pcd, leaf_pcd,
     close_branch_pcd = select_close_points(leaf_pcd, branch_pcd, close_branch_distance)
 
     # Concatenate downsampled point clouds
-    close_branch_pcd = close_branch_pcd.voxel_down_sample(voxel_size=voxel_size)
-    leaf_pcd = leaf_pcd.voxel_down_sample(voxel_size=voxel_size)
+    close_branch_pcd = close_branch_pcd.voxel_down_sample(voxel_size=graph_voxel_size)
+    leaf_pcd = leaf_pcd.voxel_down_sample(voxel_size=graph_voxel_size)
     all_sim_pts = np.vstack([np.array(box_start_pcd.points), np.array(close_branch_pcd.points), np.array(leaf_pcd.points)])
     # if verbose:
     #     o3d.visualization.draw_geometries([close_branch_pcd, leaf_pcd])
