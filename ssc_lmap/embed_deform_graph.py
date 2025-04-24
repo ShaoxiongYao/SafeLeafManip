@@ -13,83 +13,6 @@ from .vis_utils import scalars_to_colors
 
 from .pts_utils import connect_points, connect_leaf2branch, select_close_points, assign_edge_weights
 
-def prepare_sim_obj(box_start_pcd, branch_pcd, leaf_pcd, 
-                    close_branch_distance=0.05, 
-                    voxel_size=0.003, nn_radius=0.01, 
-                    leaf2branch_weight=100, verbose=False):
-    """
-    Prepare simulator object for the leaf and branch point clouds.
-    
-    The creates embedded deformation graph for the following points: 
-    box point on the gripper of the robot, branch point cloud, and leaf point cloud.
-    
-    Args:
-        box_start_pcd (o3d.geometry.PointCloud): Representing grasp points a rectangle box.
-        branch_pcd (o3d.geometry.PointCloud): Point cloud of the branch.
-        leaf_pcd (o3d.geometry.PointCloud): Point cloud of the leaf.
-        close_branch_distance (float): Distance threshold to collect leaf points close to the branch.
-        voxel_size (float): Voxel size for downsampling the point clouds.
-        nn_radius (float): Radius for nearest neighbor search on the leaf point cloud.
-        leaf2branch_weight (float): Weight for the edges connecting leaf points to branch points.
-        verbose (bool): If True, visualize the point clouds and edges.
-    
-    Returns:
-        all_vis_pcd (o3d.geometry.PointCloud): Point cloud containing all points for visualization. 
-        all_sim_pts (np.ndarray): shape (N, 3) containing all points for simulation.
-        handle_idx (np.ndarray): shape (N,) containing indices of the handle points.
-        connect_ary (np.ndarray): shape (M, 2) containing the edges connecting points in the graph.
-        edge_weights (np.ndarray): shape (M,) containing weights for the edges in the graph.
-    """
-    all_vis_pts = np.vstack([np.array(branch_pcd.points), np.array(leaf_pcd.points)])
-
-    all_vis_pcd = o3d.geometry.PointCloud()
-    all_vis_pcd.points = o3d.utility.Vector3dVector(all_vis_pts)
-    all_vis_pcd.colors = o3d.utility.Vector3dVector(np.vstack([np.array(branch_pcd.colors), np.array(leaf_pcd.colors)]))
-
-    close_branch_pcd = select_close_points(leaf_pcd, branch_pcd, close_branch_distance)
-
-    # Concatenate downsampled point clouds
-    close_branch_pcd = close_branch_pcd.voxel_down_sample(voxel_size=voxel_size)
-    leaf_pcd = leaf_pcd.voxel_down_sample(voxel_size=voxel_size)
-    all_sim_pts = np.vstack([np.array(box_start_pcd.points), np.array(close_branch_pcd.points), np.array(leaf_pcd.points)])
-    # if verbose:
-    #     o3d.visualization.draw_geometries([close_branch_pcd, leaf_pcd])
-
-    handle_idx = np.arange(len(box_start_pcd.points) + len(close_branch_pcd.points))
-
-    connect_ary = connect_points(all_sim_pts, nn_radius)
-
-    leaf2branch_edges = connect_leaf2branch(np.array(leaf_pcd.points), np.array(close_branch_pcd.points), nn_radius*2.0)
-    leaf2branch_edges += len(box_start_pcd.points)
-    leaf2branch_edges[:, 0] += len(close_branch_pcd.points)
-
-    # Visualize the lineset that connect leaf_pts and branch_pts with edges above
-    line_set = o3d.geometry.LineSet()
-    line_set.points = o3d.utility.Vector3dVector(all_sim_pts)
-    line_set.lines = o3d.utility.Vector2iVector(leaf2branch_edges)
-    if verbose:
-        o3d.visualization.draw_geometries([line_set, leaf_pcd, branch_pcd])
-
-    print('number of handle points:', len(handle_idx))
-    # Assign prior edge weights based on the relative position of the points
-    # 3.0 for points close to the center, 2.0 for points between centers and edges, 1.0 for points on edges
-    edge_weights = assign_edge_weights(leaf_pcd, all_sim_pts, connect_ary, w1=3.0, w2=2.0, w3=1.0)
-    edge_weights = np.array(edge_weights)
-
-    edge2weight_dict = {}
-    for edge, weight in zip(connect_ary, edge_weights):
-        edge2weight_dict[(edge[0], edge[1])] = weight
-    
-    for edge in leaf2branch_edges:
-        edge2weight_dict[(edge[0], edge[1])] = leaf2branch_weight
-    
-    connect_ary = np.array(list(edge2weight_dict.keys()))
-    edge_weights = np.array(list(edge2weight_dict.values()))
-
-    # connect_ary = np.concatenate([connect_ary, leaf2branch_edges], axis=0)
-    # edge_weights = np.concatenate([edge_weights, leaf2branch_weight*np.ones(len(leaf2branch_edges))], axis=0)
-    return all_vis_pcd, all_sim_pts, handle_idx, connect_ary, edge_weights
-
 
 class DeformState(nn.Module):
     """
@@ -192,7 +115,8 @@ class NodeGraph:
     """
     def __init__(self, rest_pts:np.ndarray, edges:np.ndarray, 
                  edge_weights:np.ndarray=None, corotate=False, 
-                 num_nns:int=10, dtype=torch.double, device='cpu') -> None:
+                 num_nns:int=10, vis_pts:np.ndarray=None,
+                 dtype=torch.double, device='cpu') -> None:
         """
         Args:
             rest_pts (np.ndarray): shape (N, 3) array representing the rest points.
@@ -201,6 +125,7 @@ class NodeGraph:
             corotate (bool): If True, also compute per-vertex rotation.
             num_nns (int): Number of nearest neighbors for
                 the nearest neighbor search to perform
+            vis_pts (np.ndarray): shape (N, 3) array representing the points to visualize.
             dtype (torch.dtype): Data type for the tensors.
             device (str): Device for the tensors.
         """
@@ -225,6 +150,8 @@ class NodeGraph:
         self.node_knn = skn.NearestNeighbors(n_neighbors=10)
         self.num_nns = num_nns
         self.node_knn.fit(rest_pts)
+        
+        self.vis_pts = vis_pts
 
         self.setup_graph_matrix()
     
@@ -580,6 +507,90 @@ class NodeGraph:
             coord_frame_lst.append(pt_frame)
             coord_frame_lst.append(ref_frame)
         return coord_frame_lst
+    
+
+def make_embed_deform_graph(box_start_pcd, branch_pcd, leaf_pcd, 
+                            close_branch_distance=0.05, 
+                            voxel_size=0.003, nn_radius=0.01, 
+                            leaf2branch_weight=100, verbose=False) -> NodeGraph:
+    """
+    Prepare simulator object for the leaf and branch point clouds.
+    
+    The creates embedded deformation graph for the following points: 
+    box point on the gripper of the robot, branch point cloud, and leaf point cloud.
+    
+    Args:
+        box_start_pcd (o3d.geometry.PointCloud): Representing grasp points a rectangle box.
+        branch_pcd (o3d.geometry.PointCloud): Point cloud of the branch.
+        leaf_pcd (o3d.geometry.PointCloud): Point cloud of the leaf.
+        close_branch_distance (float): Distance threshold to collect leaf points close to the branch.
+        voxel_size (float): Voxel size for downsampling the point clouds.
+        nn_radius (float): Radius for nearest neighbor search on the leaf point cloud.
+        leaf2branch_weight (float): Weight for the edges connecting leaf points to branch points.
+        verbose (bool): If True, visualize the point clouds and edges.
+    
+    Returns:
+        all_vis_pcd (o3d.geometry.PointCloud): Point cloud containing all points for visualization. 
+        all_sim_pts (np.ndarray): shape (N, 3) containing all points for simulation.
+        handle_idx (np.ndarray): shape (N,) containing indices of the handle points.
+        connect_ary (np.ndarray): shape (M, 2) containing the edges connecting points in the graph.
+        edge_weights (np.ndarray): shape (M,) containing weights for the edges in the graph.
+    """
+    all_vis_pts = np.vstack([np.array(branch_pcd.points), np.array(leaf_pcd.points)])
+
+    all_vis_pcd = o3d.geometry.PointCloud()
+    all_vis_pcd.points = o3d.utility.Vector3dVector(all_vis_pts)
+    all_vis_pcd.colors = o3d.utility.Vector3dVector(np.vstack([np.array(branch_pcd.colors), np.array(leaf_pcd.colors)]))
+
+    close_branch_pcd = select_close_points(leaf_pcd, branch_pcd, close_branch_distance)
+
+    # Concatenate downsampled point clouds
+    close_branch_pcd = close_branch_pcd.voxel_down_sample(voxel_size=voxel_size)
+    leaf_pcd = leaf_pcd.voxel_down_sample(voxel_size=voxel_size)
+    all_sim_pts = np.vstack([np.array(box_start_pcd.points), np.array(close_branch_pcd.points), np.array(leaf_pcd.points)])
+    # if verbose:
+    #     o3d.visualization.draw_geometries([close_branch_pcd, leaf_pcd])
+
+    handle_idx = np.arange(len(box_start_pcd.points) + len(close_branch_pcd.points))
+
+    connect_ary = connect_points(all_sim_pts, nn_radius)
+
+    leaf2branch_edges = connect_leaf2branch(np.array(leaf_pcd.points), np.array(close_branch_pcd.points), nn_radius*2.0)
+    leaf2branch_edges += len(box_start_pcd.points)
+    leaf2branch_edges[:, 0] += len(close_branch_pcd.points)
+
+    # Visualize the lineset that connect leaf_pts and branch_pts with edges above
+    line_set = o3d.geometry.LineSet()
+    line_set.points = o3d.utility.Vector3dVector(all_sim_pts)
+    line_set.lines = o3d.utility.Vector2iVector(leaf2branch_edges)
+    if verbose:
+        o3d.visualization.draw_geometries([line_set, leaf_pcd, branch_pcd])
+
+    print('number of handle points:', len(handle_idx))
+    # Assign prior edge weights based on the relative position of the points
+    # 3.0 for points close to the center, 2.0 for points between centers and edges, 1.0 for points on edges
+    edge_weights = assign_edge_weights(leaf_pcd, all_sim_pts, connect_ary, w1=3.0, w2=2.0, w3=1.0)
+    edge_weights = np.array(edge_weights)
+
+    edge2weight_dict = {}
+    for edge, weight in zip(connect_ary, edge_weights):
+        edge2weight_dict[(edge[0], edge[1])] = weight
+    
+    for edge in leaf2branch_edges:
+        edge2weight_dict[(edge[0], edge[1])] = leaf2branch_weight
+    
+    connect_ary = np.array(list(edge2weight_dict.keys()))
+    edge_weights = np.array(list(edge2weight_dict.values()))
+
+    # connect_ary = np.concatenate([connect_ary, leaf2branch_edges], axis=0)
+    # edge_weights = np.concatenate([edge_weights, leaf2branch_weight*np.ones(len(leaf2branch_edges))], axis=0)
+    # return all_vis_pcd, all_sim_pts, handle_idx, connect_ary, edge_weights
+
+    # edge_weights = np.ones(len(connect_ary))
+    node_graph = NodeGraph(all_sim_pts, connect_ary, edge_weights=edge_weights, 
+                           corotate=True, vis_pts=all_vis_pts, device='cuda')
+    node_graph.set_handle_idx(handle_idx)
+    return node_graph
 
 if __name__ == '__main__':
     rest_pts = torch.zeros(5, 3)
