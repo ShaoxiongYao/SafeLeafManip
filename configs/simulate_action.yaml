@@ -17,7 +17,11 @@ plant_simulator:
   deform_iters: 300
   energy_converge_threshold: 0.00001
 
+octomap:
+  voxel_size: 0.003
+
 action:
+  move_type: '3D-6directions'
   move_min_dist: 0.00
   move_max_dist: 0.08
   move_steps: 4
