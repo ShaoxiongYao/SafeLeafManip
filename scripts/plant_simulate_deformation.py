@@ -14,14 +14,14 @@ import copy
 
 import context
 from ssc_lmap.segment_plant import CLASSES
-from ssc_lmap.grasp_planner import GraspPlanner
+from ssc_lmap.grasp_planner import GraspPlanner, GraspPlannerConfig
 from ssc_lmap.vis_utils import create_ball, create_arrow_lst, bool2color
 from ssc_lmap.vis_utils import gen_trans_box, image_plane2pcd, create_ball
 
-from ssc_lmap.pts_utils import trans_matrix2pose, get_largest_dbscan_component
+from ssc_lmap.pts_utils import trans_matrix2pose, get_largest_dbscan_component, get_discrete_move_directions
 from ssc_lmap.embed_deform_graph import prepare_sim_obj, NodeGraph
-from ssc_lmap.grasp_planner import get_discrete_move_directions
-from data.arm_configs import home_angles
+from yaml import safe_load
+import dacite
 
 
 view_params = {	
@@ -36,6 +36,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--segment_dir', type=str, help='plant segmentation directory, should contains fruit, leaf, branch pcd')
     parser.add_argument('--shape_complete_dir', type=str, help='plant shape completion output directory')
+    parser.add_argument('--simulate_action_config', type=str, default='configs/simulate_action.yaml',
+                        help='plant action simulation config file describing the parameters for simulation')
     parser.add_argument('--object_boundary_threshold', type=float, default=0.015, help='object boundary threshold')    
     parser.add_argument('--num_cvx_samples', type=int, default=15, help='number of convex hull samples')    
     parser.add_argument('--pregrasp_dis', type=float, default=0.05, help='pregrasp distance')
@@ -63,7 +65,13 @@ if __name__ == '__main__':
     cam2rob_trans = np.array(camera_params['cam2rob'])
     cam_center = cam2rob_trans[:3, 3]
     
-    grasp_sample_start_time = time.time()
+    # Prepare configurations for shape completion
+    shape_complete_config = safe_load(open(args.shape_complete_config, 'r'))
+    preprocess_config = shape_complete_config['preprocess']
+    grasp_planner_config = dacite.from_dict(GraspPlannerConfig, shape_complete_config['grasp_planner'])
+    # free_space_config = dacite.from_dict(FreeSpaceConfig, shape_complete_config['free_space'])
+    # branch_completion_config = dacite.from_dict(BranchCompletionConfig, shape_complete_config['branch_completion'])
+    # fruit_completion_config = dacite.from_dict(FruitCompletionConfig, shape_complete_config['fruit_completion'])
     
 
     segment_dir = Path(args.segment_dir)
@@ -75,19 +83,19 @@ if __name__ == '__main__':
     cropped_scene_pcd = o3d.io.read_point_cloud(str(segment_dir / f'cropped_scene_pcd.ply'))
     
     # Preprocess leaf and fruit point clouds
-    leaf_pcd = get_largest_dbscan_component(leaf_pcd, nn_radius=0.008, min_points=30, vis_pcd=True)
-    fruit_pcd = get_largest_dbscan_component(fruit_pcd, nn_radius=0.008, min_points=30, vis_pcd=True)
+    leaf_pcd = get_largest_dbscan_component(leaf_pcd, nn_radius=preprocess_config['dbscan_eps'], 
+                                            min_points=preprocess_config['dbscan_min_points'], vis_pcd=False)
+    fruit_pcd = get_largest_dbscan_component(fruit_pcd, nn_radius=preprocess_config['dbscan_eps'], 
+                                            min_points=preprocess_config['dbscan_min_points'], vis_pcd=False)
     
     # Load completed triangle meshes
     fit_fruit_mesh = o3d.io.read_triangle_mesh(str(shape_complete_dir / 'completed_fruit_mesh.ply'))
     fit_fruit_pcd = fit_fruit_mesh.sample_points_poisson_disk(number_of_points=10000)
 
-    grasp_planner = GraspPlanner(branch_pcd, object_boundary_threshold=args.object_boundary_threshold)
-    grasp_frame_lst = grasp_planner.plan_grasp_leaf(leaf_pcd, num_cvx_samples=args.num_cvx_samples, 
-                                                    vis_cvx_hull=False, vis_approach_pts=False, 
-                                                    vis_grasp_frame=False, vis_remove_outliers=False
-                                                    # vis_cvx_hull=False, vis_approach_pts=True, vis_grasp_frame=False, vis_remove_outliers=True
-                                                    )
+    grasp_sample_start_time = time.time()
+    grasp_planner = GraspPlanner(branch_pcd, config=grasp_planner_config)
+    grasp_frame_lst = grasp_planner.plan_grasp_leaf(leaf_pcd, vis_cvx_hull=False, vis_approach_pts=False, 
+                                                    vis_grasp_frame=False, vis_remove_outliers=False)
     print('number of grasp frames:', len(grasp_frame_lst))
 
     leaf_center = np.array(leaf_pcd.get_center())
