@@ -117,6 +117,7 @@ class NodeGraph:
     def __init__(self, rest_pts:np.ndarray, edges:np.ndarray, 
                  edge_weights:np.ndarray=None, corotate=False, 
                  num_nns:int=10, vis_pts:np.ndarray=None,
+                 rbf_sig=0.3, rbf_w_max=0.2, dist_max=0.05,
                  dtype=torch.double, device='cpu') -> None:
         """
         Args:
@@ -153,7 +154,7 @@ class NodeGraph:
         self.node_knn.fit(rest_pts)
         
         self.vis_pts = vis_pts
-        self.vis_beta = self.get_pts_beta(vis_pts, rbf_sig=0.5, rbf_w_max=0.2, dist_max=0.1)
+        self.vis_beta = self.get_pts_beta(vis_pts, rbf_sig, rbf_w_max, dist_max)
 
         self.setup_graph_matrix()
     
