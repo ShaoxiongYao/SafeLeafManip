@@ -5,8 +5,11 @@
 <sup>2</sup>Humanoid Robots Lab, University of Bonn, Germany  
 <sup>†</sup>Equal contribution
 
-[![arXiv](https://img.shields.io/badge/arXiv-2409.17389-b31b1b.svg)](https://arxiv.org/abs/2409.17389)  
-[![YouTube Video](https://img.shields.io/badge/Video-Youtube-red?logo=youtube)](https://youtu.be/bHzx8Zcsfoo)
+[![arXiv](https://img.shields.io/badge/arXiv-2409.17389-b31b1b.svg)](https://arxiv.org/abs/2409.17389)  [![YouTube Video](https://img.shields.io/badge/Video-Youtube-red?logo=youtube)](https://youtu.be/bHzx8Zcsfoo)
+
+<p align="center">
+   <img width="600" alt="star_figure_v3" src="https://github.com/user-attachments/assets/72f90d31-9b38-4290-8b72-eb02ac3ff3ea" />
+</p>
 
 ## Overview
 
