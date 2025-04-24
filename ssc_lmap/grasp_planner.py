@@ -25,7 +25,11 @@ class GraspPlannerConfig:
 class PullActionConfig:
     """
     Configurations for the pull action.
+    
+    TODO: figure out a better place for this class.
     """
+    move_type: str
+    """ Specify how actions are sampled around the grasped point."""
     move_min_dist: float
     """ Minimum distance for the pull action."""
     move_max_dist: float
