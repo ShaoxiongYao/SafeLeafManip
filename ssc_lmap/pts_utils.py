@@ -385,6 +385,44 @@ def sample_points_on_hull(points, num_samples):
         'sampled_points': np.array(sampled_points)
     }
 
+
+def get_discrete_move_directions(sample_action_mode: str) -> np.ndarray:
+    """
+    Returns an array of discrete movement direction vectors based on the specified sampling mode.
+
+    Args:
+        sample_action_mode (str): Specifies the set of movement directions to generate.
+            Supported values:
+            - '3D-6directions': 6 axis-aligned unit vectors along x, y, and z.
+            - '3D-14directions': 6 axis-aligned + 8 diagonal vectors pointing to the cube corners.
+            - '2D-8directions': 8 directions in the x-z plane forming a unit circle.
+
+    Returns:
+        np.ndarray: An (N, 3) array of movement vectors where N depends on the sampling mode.
+
+    Raises:
+        ValueError: If the sample_action_mode is not one of the supported modes.
+    """
+    if sample_action_mode == '3D-6directions':
+        move_vec_ary = np.array([[0, 0, 1], [0, 0, -1], 
+                                 [0, 1, 0], [0, -1, 0], 
+                                 [1, 0, 0], [-1, 0, 0]])
+    elif sample_action_mode == '3D-14directions':
+        move_vec_ary = np.array([[0, 0, 1], [0, 0, -1], 
+                                 [0, 1, 0], [0, -1, 0], 
+                                 [1, 0, 0], [-1, 0, 0]])
+        diagonal_dirs = np.array([[ 1, 1, 1], [ 1, 1, -1], [ 1, -1, 1], [ 1, -1, -1],
+                                  [-1, 1, 1], [-1, 1, -1], [-1, -1, 1], [-1, -1, -1]]) / np.sqrt(3)
+        move_vec_ary = np.concatenate([move_vec_ary, diagonal_dirs], axis=0)
+    elif sample_action_mode == '2D-8directions':
+        angles_lst = [0, np.pi / 4, np.pi / 2, 3 * np.pi / 4, 
+                      np.pi, 5 * np.pi / 4, 3 * np.pi / 2, 7 * np.pi / 4]
+        move_vec_ary = np.array([[0, np.cos(angle), np.sin(angle)] for angle in angles_lst])
+    else:
+        raise ValueError(f"Unsupported sample_action_mode: {sample_action_mode}")
+    
+    return move_vec_ary
+
 def pca_points(points):
     """
     Run PCA anaysis on a set of points.
