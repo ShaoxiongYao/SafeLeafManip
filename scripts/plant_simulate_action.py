@@ -91,15 +91,14 @@ if __name__ == '__main__':
     sim_out_dir = Path(args.sim_out_dir)
     sim_out_dir.mkdir(parents=True, exist_ok=True)
     
-    move_vec_ary = get_discrete_move_directions(action_config.move_type)
+    all_move_dir_ary = get_discrete_move_directions(action_config.move_type)
+    all_move_dir_tsr = torch.from_numpy(all_move_dir_ary).double().to('cuda')
     
     octomap_wrapper = OctomapWrapper()
 
     final_energy_lst = []
     final_number_visible_pts_lst = []
     for grasp_id, grasp_frame in enumerate(grasp_frame_lst):
-
-        precompute_start_time = time.time()
         
         # Prepare embedded deformation graph simulation
         node_graph = make_embed_deform_graph(grasp_frame, branch_pcd, leaf_pcd, 
@@ -110,16 +109,8 @@ if __name__ == '__main__':
         rest_pcd.paint_uniform_color([0.7, 0.0, 0.7])        
         line_set = node_graph.get_line_set()
         o3d.visualization.draw_geometries([line_set])
-        
-        precompute_end_time = time.time()
-        print('precompute time:', precompute_end_time - precompute_start_time)
-        time_stats_dict[f'grasp_{grasp_id:02d}_precompute_time'] = precompute_end_time - precompute_start_time
 
-        for move_id, move_dir in enumerate(move_vec_ary):
-
-            move_dir_tsr = torch.from_numpy(move_dir).to(**node_graph.tsr_params)
-
-            np.save(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_move_direction.npy', move_dir)
+        for move_id, move_dir_tsr in enumerate(all_move_dir_tsr):
 
             # reset the state of the graph to the initial state
             node_graph.reset_state()
@@ -155,8 +146,6 @@ if __name__ == '__main__':
                 o3d.visualization.draw_geometries([rest_pcd, curr_sim_pcd] + arrow_lst)
 
                 curr_vis_pcd = node_graph.get_vis_pcd(fix_pts_idx=np.arange(len(branch_pcd.points)))
-                o3d.io.write_point_cloud(str(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_curr_vis_pcd.ply'), curr_vis_pcd)
-                o3d.io.write_point_cloud(str(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_curr_sim_pcd.ply'), curr_sim_pcd)
                 o3d.visualization.draw_geometries([rest_pcd, curr_sim_pcd, curr_vis_pcd] + arrow_lst)
 
                 merged_pcd = curr_vis_pcd + fit_fruit_pcd #+ arm_pcd
@@ -164,24 +153,10 @@ if __name__ == '__main__':
                 
                 """Ray casting to compute visible points"""
                 vis_points, octo_points = octomap_wrapper.compute_visible_points(merged_pcd, fit_fruit_pcd, cam_center,
-                                                                                 octomap_config['voxel_size'], verbose=False)
+                                                                                 octomap_config['voxel_size'], verbose=True)
                 print('ray casting number visible points:', len(vis_points))
                 np.save(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_num_vis_pts.npy', len(vis_points))
                 """End of ray casting to compute visible points"""
-
-                if len(vis_points) == 0:
-                    print('INFO: no visible points')
-                    continue
-                else:
-                    vis_pcd = o3d.geometry.PointCloud()
-                    vis_pcd.points = o3d.utility.Vector3dVector(np.asarray(vis_points))
-                    vis_pcd.paint_uniform_color([0.7, 0.7, 0.0])
-                    octo_pcd = o3d.geometry.PointCloud()
-                    octo_pcd.points = o3d.utility.Vector3dVector(np.asarray(octo_points))
-                    octo_pcd.paint_uniform_color([0.0, 0.7, 0.7])
-                    cam_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
-                    cam_frame.transform(cam2rob_trans)
-                    o3d.visualization.draw_geometries([octo_pcd, vis_pcd, cam_frame, curr_vis_pcd])
 
                 # if len(vis_points) >= all_vis_fit_fruit_pts_num * args.max_visible_pts_rate:
                 #     print('INFO: reach maximum visible points rate:', len(vis_points) / all_vis_fit_fruit_pts_num)
