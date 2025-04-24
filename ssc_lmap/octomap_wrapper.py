@@ -5,6 +5,7 @@ import open3d as o3d
 import octomap
 
 from .pts_utils import is_free_frontier_point
+from .vis_utils import create_ball
 
 from dataclasses import dataclass
 
@@ -154,7 +155,7 @@ class OctomapWrapper:
         if verbose:
             print('ray tracing time:', time.time() - start_time)
         
-        octo_pts = np.array(octo_pts)
+        octo_points = np.array(octo_pts)
     
         vis_points = []
         for k in vis_dict.keys():
@@ -164,5 +165,18 @@ class OctomapWrapper:
             octo_k[2] = k[2]
             vis_points.append(octomap_scene_copy.keyToCoord(octo_k))
         vis_points = np.array(vis_points)
+        
+        if verbose:
+            if len(vis_points) == 0:
+                print('INFO: no visible points')
+            else:
+                vis_pcd = o3d.geometry.PointCloud()
+                vis_pcd.points = o3d.utility.Vector3dVector(np.asarray(vis_points))
+                vis_pcd.paint_uniform_color([0.7, 0.7, 0.0])
+            octo_pcd = o3d.geometry.PointCloud()
+            octo_pcd.points = o3d.utility.Vector3dVector(np.asarray(octo_points))
+            octo_pcd.paint_uniform_color([0.0, 0.7, 0.7])
+            camera_ball = create_ball(radius=0.02, color=[1, 0, 0], center=cam_center)
+            o3d.visualization.draw_geometries([merged_pcd, octo_pcd, vis_pcd, camera_ball])
         
         return vis_points, octo_pts
