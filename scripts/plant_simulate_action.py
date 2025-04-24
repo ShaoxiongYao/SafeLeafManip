@@ -61,10 +61,6 @@ if __name__ == '__main__':
     preprocess_config = simulate_action_config['preprocess']
     grasp_planner_config = dacite.from_dict(GraspPlannerConfig, simulate_action_config['grasp_planner'])
     simulator_config = dacite.from_dict(PlantSimulatorConfig, simulate_action_config['plant_simulator'])
-    # free_space_config = dacite.from_dict(FreeSpaceConfig, shape_complete_config['free_space'])
-    # branch_completion_config = dacite.from_dict(BranchCompletionConfig, shape_complete_config['branch_completion'])
-    # fruit_completion_config = dacite.from_dict(FruitCompletionConfig, shape_complete_config['fruit_completion'])
-    
 
     segment_dir = Path(args.segment_dir)
     shape_complete_dir = Path(args.shape_complete_dir)
@@ -78,7 +74,7 @@ if __name__ == '__main__':
     leaf_pcd = get_largest_dbscan_component(leaf_pcd, nn_radius=preprocess_config['dbscan_eps'], 
                                             min_points=preprocess_config['dbscan_min_points'], vis_pcd=False)
     fruit_pcd = get_largest_dbscan_component(fruit_pcd, nn_radius=preprocess_config['dbscan_eps'], 
-                                            min_points=preprocess_config['dbscan_min_points'], vis_pcd=False)
+                                             min_points=preprocess_config['dbscan_min_points'], vis_pcd=False)
     
     # Load completed triangle meshes
     fit_fruit_mesh = o3d.io.read_triangle_mesh(str(shape_complete_dir / 'completed_fruit_mesh.ply'))
@@ -118,11 +114,8 @@ if __name__ == '__main__':
         print('number of nodes:', node_graph.num_pts)
         print('number of edges:', node_graph.num_edges)
         
-        all_vis_pts = node_graph.vis_pts
         all_sim_pts = node_graph.rest_pts_tsr.cpu().numpy()
         handle_idx = node_graph.handle_idx
-        
-        vis_beta = node_graph.get_pts_beta(all_vis_pts, rbf_sig=0.3, dist_max=0.05)
 
         line_set = node_graph.get_line_set()
         o3d.visualization.draw_geometries([line_set])
@@ -147,24 +140,14 @@ if __name__ == '__main__':
 
                 np.save(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_world_move_vec.npy', 
                         move_step_length*world_move_vec)
-
-                rest_pts_tsr = torch.tensor(all_sim_pts[handle_idx, :], dtype=torch.double, device='cuda')
-                energy = node_graph.energy(handle_idx, rest_pts_tsr)
-                print('initial energy:', energy.item())
                 
-                current_points = all_sim_pts[handle_idx].copy()
+                # Prepare moved handle points for simulation
+                current_points = all_sim_pts[node_graph.handle_idx].copy()
                 current_points[:simulator_config.num_box_pts] += move_step_length * world_move_vec
                 handle_pts_tsr = torch.tensor(current_points, dtype=torch.double, device='cuda')
 
-                arrow_lst = create_arrow_lst(all_sim_pts[handle_idx], handle_pts_tsr.detach().cpu().numpy())
-                # o3d.visualization.draw_geometries([branch_pcd, completed_branch_mesh, leaf_pcd, box_start_pcd, grasp_coord_frame] + arrow_lst)
-
-                geom = node_graph.get_pcd(handle_idx=handle_idx, handle_pts_tsr=handle_pts_tsr)
-                # o3d.visualization.draw_geometries([rest_pcd, geom] + arrow_lst)
-
                 sim_start_time = time.time()
                 start_time = time.time()
-                energy_list = []
 
                 with torch.no_grad():
                     energy_list = node_graph.solve_global_local(handle_idx, handle_pts_tsr, simulator_config.deform_iters,
@@ -172,6 +155,7 @@ if __name__ == '__main__':
                 energy = node_graph.energy(handle_idx, handle_pts_tsr)
                 
                 deformed_pcd = node_graph.get_pcd(handle_idx=handle_idx, handle_pts_tsr=handle_pts_tsr)
+                arrow_lst = create_arrow_lst(all_sim_pts[handle_idx], handle_pts_tsr.detach().cpu().numpy())
                 o3d.visualization.draw_geometries([rest_pcd, deformed_pcd] + arrow_lst)
 
                 np.save(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_debug_energy_list.npy', energy_list)
@@ -184,14 +168,7 @@ if __name__ == '__main__':
                 # plt.show()
                 final_energy_lst.append(energy.item())
 
-                delta_vis_pts = node_graph.get_delta_pts().detach().cpu().numpy()
-                vis_pts_delta = vis_beta @ delta_vis_pts
-                vis_pts_delta[:len(branch_pcd.points), :] = 0
-                curr_vis_pts = all_vis_pts + vis_pts_delta
-                
-                all_vis_pcd = o3d.geometry.PointCloud()
-                all_vis_pcd.points = o3d.utility.Vector3dVector(curr_vis_pts)
-                all_vis_pcd.paint_uniform_color([0.0, 0.7, 0.7])
+                all_vis_pcd = node_graph.get_vis_pcd(fix_pts_idx=np.arange(len(branch_pcd.points)))
                 o3d.io.write_point_cloud(str(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_all_vis_pcd.ply'), all_vis_pcd)
 
                 curr_pcd = node_graph.get_pcd(handle_idx, handle_pts_tsr)
@@ -210,8 +187,6 @@ if __name__ == '__main__':
                 print('ray casting number visible points:', len(vis_points))
                 np.save(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_num_vis_pts.npy', len(vis_points))
 
-                cam_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
-                cam_frame.transform(cam2rob_trans)
 
                 if len(vis_points) == 0:
                     print('INFO: no visible points')
@@ -223,16 +198,9 @@ if __name__ == '__main__':
                     octo_pcd = o3d.geometry.PointCloud()
                     octo_pcd.points = o3d.utility.Vector3dVector(np.asarray(octo_points))
                     octo_pcd.paint_uniform_color([0.0, 0.7, 0.7])
+                    cam_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
+                    cam_frame.transform(cam2rob_trans)
                     o3d.visualization.draw_geometries([octo_pcd, vis_pcd, cam_frame, all_vis_pcd])
-
-                #     o3d.io.write_point_cloud(str(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_ray_vis_pcd.ply'), vis_pcd)
-
-                # move_end_time = time.time()
-                # print('move time:', move_end_time - move_start_time)
-
-                # # if len(vis_points) == all_vis_fit_fruit_pts_num:
-                # #     print('INFO: reach maximum visible points')
-                # #     break
 
                 # if len(vis_points) >= all_vis_fit_fruit_pts_num * args.max_visible_pts_rate:
                 #     print('INFO: reach maximum visible points rate:', len(vis_points) / all_vis_fit_fruit_pts_num)
