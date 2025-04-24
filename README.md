@@ -1,5 +1,13 @@
 # Safe Leaf Manipulation for Accurate Shape and Pose Estimation of Occluded Fruits
 
+**Shaoxiong Yao<sup>1†</sup>, Sicong Pan<sup>2†</sup>, Maren Bennewitz<sup>2</sup>, Kris Hauser<sup>1</sup>**  
+<sup>1</sup>University of Illinois Urbana-Champaign, USA  
+<sup>2</sup>Humanoid Robots Lab, University of Bonn, Germany  
+<sup>†</sup>Equal contribution
+
+[![arXiv](https://img.shields.io/badge/arXiv-2409.17389-b31b1b.svg)](https://arxiv.org/abs/2409.17389)  
+[![YouTube Video](https://img.shields.io/badge/Video-Youtube-red?logo=youtube)](https://youtu.be/bHzx8Zcsfoo)
+
 ## Overview
 
 This repository contains the official code implementation for our ICRA 2025 paper.
