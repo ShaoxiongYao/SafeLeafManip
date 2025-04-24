@@ -101,9 +101,6 @@ You're now ready to run plant segmentation using GroundedSAM.
 You're now ready to run your control pipeline.
 </details>
 
-Here’s a polished version of your **Use cases** section, keeping all script names and links unchanged:
-
----
 
 ## Use Cases
 
@@ -123,7 +120,6 @@ Set the `DATA_DIR` environment variable to the path of the `test_obj_100` folder
 DATA_DIR="path/to/test_obj_100"
 ```
 
----
 
 ### 1. Run Shape Completion Demo
 
@@ -137,7 +133,6 @@ python scripts/plant_shape_completion.py \
     --shape_complete_config configs/shape_complete.yaml
 ```
 
----
 
 ### 2. Run Deformation Simulation Demo
 
