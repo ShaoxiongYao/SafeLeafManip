@@ -20,7 +20,7 @@ from ssc_lmap.vis_utils import create_ball, create_arrow_lst, bool2color
 from ssc_lmap.vis_utils import gen_trans_box, image_plane2pcd, create_ball, vis_grasp_frames
 
 from ssc_lmap.pts_utils import trans_matrix2pose, get_largest_dbscan_component, get_discrete_move_directions
-from ssc_lmap.embed_deform_graph import NodeGraph, make_embed_deform_graph
+from ssc_lmap.embed_deform_graph import NodeGraph, make_embed_deform_graph, PlantSimulatorConfig
 from yaml import safe_load
 import dacite
 
@@ -39,21 +39,11 @@ if __name__ == '__main__':
     parser.add_argument('--shape_complete_dir', type=str, help='plant shape completion output directory')
     parser.add_argument('--simulate_action_config', type=str, default='configs/simulate_action.yaml',
                         help='plant action simulation config file describing the parameters for simulation')
-    parser.add_argument('--object_boundary_threshold', type=float, default=0.015, help='object boundary threshold')    
-    parser.add_argument('--num_cvx_samples', type=int, default=15, help='number of convex hull samples')    
-    parser.add_argument('--pregrasp_dis', type=float, default=0.05, help='pregrasp distance')
     parser.add_argument('--sim_out_dir', type=str, default='data/sim_out', help='output directory for simulation')
-    parser.add_argument('--num_box_pts', type=int, default=25)
-    parser.add_argument('--deform_optimizer', type=str, default='inverse')
     parser.add_argument('--move_min_dist', type=float, default=0.01)
     parser.add_argument('--move_max_dist', type=float, default=0.05)
     parser.add_argument('--move_steps', type=int, default=3)
-    parser.add_argument('--deform_iters', type=int, default=20)
-    parser.add_argument('--energy_converge_threshold', type=float, default=0.01)
     parser.add_argument('--voxel_size', type=float, default=0.003)
-    parser.add_argument('--close_branch_distance', type=float, default=0.05, help='close branch distance')
-    parser.add_argument('--graph_voxel_size', type=float, default=0.005, help='voxel size for graph construction')
-    parser.add_argument('--nn_radius', type=float, default=0.008, help='nearest neighbor radius for graph construction')
     
     parser.add_argument('--trans_params_fn', type=str, default='data/tripod_finetune_params1.json')
     
@@ -70,6 +60,7 @@ if __name__ == '__main__':
     simulate_action_config = safe_load(open(args.simulate_action_config, 'r'))
     preprocess_config = simulate_action_config['preprocess']
     grasp_planner_config = dacite.from_dict(GraspPlannerConfig, simulate_action_config['grasp_planner'])
+    simulator_config = dacite.from_dict(PlantSimulatorConfig, simulate_action_config['plant_simulator'])
     # free_space_config = dacite.from_dict(FreeSpaceConfig, shape_complete_config['free_space'])
     # branch_completion_config = dacite.from_dict(BranchCompletionConfig, shape_complete_config['branch_completion'])
     # fruit_completion_config = dacite.from_dict(FruitCompletionConfig, shape_complete_config['fruit_completion'])
@@ -118,11 +109,8 @@ if __name__ == '__main__':
         
         # Prepare embedded deformation graph simulation
         node_graph = make_embed_deform_graph(grasp_frame, branch_pcd, leaf_pcd, 
-                                             args.num_box_pts, args.close_branch_distance, 
-                                             args.graph_voxel_size, nn_radius=args.nn_radius, 
-                                             # verbose=False
-                                             verbose=True
-                                             )
+                                             simulator_config.num_box_pts, simulator_config.close_branch_distance,
+                                             simulator_config.graph_voxel_size, simulator_config.nn_radius)
 
         rest_pcd = node_graph.get_pcd()
         rest_pcd.paint_uniform_color([0.7, 0.0, 0.7])
@@ -133,22 +121,15 @@ if __name__ == '__main__':
         all_vis_pts = node_graph.vis_pts
         all_sim_pts = node_graph.rest_pts_tsr.cpu().numpy()
         handle_idx = node_graph.handle_idx
-        all_vis_pcd = o3d.geometry.PointCloud()
-        all_vis_pcd.points = o3d.utility.Vector3dVector(all_vis_pts)
         
         vis_beta = node_graph.get_pts_beta(all_vis_pts, rbf_sig=0.3, dist_max=0.05)
 
         line_set = node_graph.get_line_set()
         o3d.visualization.draw_geometries([line_set])
-
-        # if args.deform_optimizer == 'inverse' or args.deform_optimizer == 'inverse_plus_adam':
-        #     # Setup handle index in graph, precompute Lapaclacian matrix and its inverse
-        #     node_graph.set_handle_idx(handle_idx)
         
         precompute_end_time = time.time()
         print('precompute time:', precompute_end_time - precompute_start_time)
         time_stats_dict[f'grasp_{grasp_id:02d}_precompute_time'] = precompute_end_time - precompute_start_time
-
 
         for move_id, local_move_vec in enumerate(move_vec_ary):
 
@@ -159,8 +140,6 @@ if __name__ == '__main__':
 
             # reset the state of the graph to the initial state
             node_graph.reset_state()
-
-            # optimizer = torch.optim.Adam(node_graph.deform_state.parameters(), lr=args.deform_lr)
 
             for move_step_length in np.linspace(args.move_min_dist, args.move_max_dist, num=args.move_steps):
 
@@ -174,7 +153,7 @@ if __name__ == '__main__':
                 print('initial energy:', energy.item())
                 
                 current_points = all_sim_pts[handle_idx].copy()
-                current_points[:args.num_box_pts] += move_step_length * world_move_vec
+                current_points[:simulator_config.num_box_pts] += move_step_length * world_move_vec
                 handle_pts_tsr = torch.tensor(current_points, dtype=torch.double, device='cuda')
 
                 arrow_lst = create_arrow_lst(all_sim_pts[handle_idx], handle_pts_tsr.detach().cpu().numpy())
@@ -188,14 +167,14 @@ if __name__ == '__main__':
                 energy_list = []
 
                 with torch.no_grad():
-                    energy_list = node_graph.solve_global_local(handle_idx, handle_pts_tsr, num_iters=args.deform_iters,
-                                                                energy_converge_threshold=args.energy_converge_threshold, verbose=True)
+                    energy_list = node_graph.solve_global_local(handle_idx, handle_pts_tsr, simulator_config.deform_iters,
+                                                                simulator_config.energy_converge_threshold, verbose=True)
                 energy = node_graph.energy(handle_idx, handle_pts_tsr)
                 
                 deformed_pcd = node_graph.get_pcd(handle_idx=handle_idx, handle_pts_tsr=handle_pts_tsr)
                 o3d.visualization.draw_geometries([rest_pcd, deformed_pcd] + arrow_lst)
 
-                np.save(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_{args.deform_optimizer}_debug_energy_list.npy', energy_list)
+                np.save(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_debug_energy_list.npy', energy_list)
                 print('optimization time:', time.time() - start_time)
                 print('final energy:', energy.item())
 
@@ -209,6 +188,8 @@ if __name__ == '__main__':
                 vis_pts_delta = vis_beta @ delta_vis_pts
                 vis_pts_delta[:len(branch_pcd.points), :] = 0
                 curr_vis_pts = all_vis_pts + vis_pts_delta
+                
+                all_vis_pcd = o3d.geometry.PointCloud()
                 all_vis_pcd.points = o3d.utility.Vector3dVector(curr_vis_pts)
                 all_vis_pcd.paint_uniform_color([0.0, 0.7, 0.7])
                 o3d.io.write_point_cloud(str(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_all_vis_pcd.ply'), all_vis_pcd)
@@ -231,14 +212,6 @@ if __name__ == '__main__':
 
                 cam_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
                 cam_frame.transform(cam2rob_trans)
-                # final_number_visible_pts_lst.append(len(vis_points))
-
-                # if f'grasp_{grasp_id:02d}_move_{move_id:02d}_octomap_time' not in time_stats_dict:
-                #     time_stats_dict[f'grasp_{grasp_id:02d}_move_{move_id:02d}_octomap_time'] = 0.0
-                # else:
-                #     time_stats_dict[f'grasp_{grasp_id:02d}_move_{move_id:02d}_octomap_time'] += time.time() - octomap_start_time
-
-        
 
                 if len(vis_points) == 0:
                     print('INFO: no visible points')
