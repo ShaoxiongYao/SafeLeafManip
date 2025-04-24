@@ -16,8 +16,7 @@ import context
 from ssc_lmap.segment_plant import CLASSES
 from ssc_lmap.grasp_planner import GraspPlanner, GraspPlannerConfig, PullActionConfig
 from ssc_lmap.octomap_wrapper import OctomapWrapper
-from ssc_lmap.vis_utils import create_ball, create_arrow_lst, bool2color
-from ssc_lmap.vis_utils import gen_trans_box, image_plane2pcd, create_ball, vis_grasp_frames
+from ssc_lmap.vis_utils import vis_grasp_frames
 
 from ssc_lmap.pts_utils import trans_matrix2pose, get_largest_dbscan_component, get_discrete_move_directions
 from ssc_lmap.embed_deform_graph import NodeGraph, make_embed_deform_graph, PlantSimulatorConfig
@@ -60,11 +59,12 @@ if __name__ == '__main__':
     fruit_pcd = o3d.io.read_point_cloud(str(segment_dir / f'{CLASSES[2]}_pcd.ply'))
     cropped_scene_pcd = o3d.io.read_point_cloud(str(segment_dir / f'cropped_scene_pcd.ply'))
     
-    # Preprocess leaf and fruit point clouds
+    """Preprocess leaf and fruit point clouds"""
     leaf_pcd = get_largest_dbscan_component(leaf_pcd, nn_radius=preprocess_config['dbscan_eps'], 
                                             min_points=preprocess_config['dbscan_min_points'], vis_pcd=False)
     fruit_pcd = get_largest_dbscan_component(fruit_pcd, nn_radius=preprocess_config['dbscan_eps'], 
                                              min_points=preprocess_config['dbscan_min_points'], vis_pcd=False)
+    """End of preprocessing leaf and fruit point clouds"""
     
     # Load completed triangle meshes
     fit_fruit_mesh = o3d.io.read_triangle_mesh(str(shape_complete_dir / 'completed_fruit_mesh.ply'))
@@ -90,8 +90,8 @@ if __name__ == '__main__':
     
     octomap_wrapper = OctomapWrapper()
 
-    final_energy_lst = []
-    final_number_visible_pts_lst = []
+    final_energy_dict = {}
+    final_number_visible_pts_dict = {}
     for grasp_id, grasp_frame in enumerate(grasp_frame_lst):
         
         # Prepare embedded deformation graph simulation
@@ -115,29 +115,27 @@ if __name__ == '__main__':
 
                 np.save(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_move_vector.npy', 
                         (move_step_length*move_dir_tsr).cpu().numpy())
-                
+
+                """Run embedded deformation graph simulation"""
                 # Prepare moved handle points for simulation
+                # TODO: find a better way to indicate movable handle points
                 handle_pts_tsr = node_graph.rest_pts_tsr[node_graph.handle_idx].clone()
                 handle_pts_tsr[:simulator_config.num_box_pts] += move_step_length * move_dir_tsr
 
                 with torch.no_grad():
                     energy_list = node_graph.solve_global_local(node_graph.handle_idx, handle_pts_tsr, simulator_config.deform_iters,
                                                                 simulator_config.energy_converge_threshold, verbose=True)
-                np.save(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_debug_energy_list.npy', energy_list)
                 energy = node_graph.energy(node_graph.handle_idx, handle_pts_tsr)
-                np.save(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_energy.npy', energy.item())
-                final_energy_lst.append(energy.item())
+                final_energy_dict[f'{grasp_id:02d}_{move_id:02d}'] = energy.item()
+                """End of run embedded deformation graph simulation"""
                 
                 # Visualize deformed graph
-                curr_sim_pcd = node_graph.get_pcd(handle_idx=node_graph.handle_idx, handle_pts_tsr=handle_pts_tsr)
-                curr_sim_pcd.paint_uniform_color([0.0, 1.0, 0.0])
-                arrow_lst = create_arrow_lst(node_graph.rest_pts_tsr[node_graph.handle_idx].detach().cpu().numpy(), 
-                                             handle_pts_tsr.detach().cpu().numpy())
+                curr_sim_pcd = node_graph.get_pcd(node_graph.handle_idx, handle_pts_tsr, [0.0, 1.0, 0.0])
+                arrow_lst = node_graph.get_deform_arrow_lst(node_graph.handle_idx, handle_pts_tsr)
                 o3d.visualization.draw_geometries([rest_pcd, curr_sim_pcd] + arrow_lst)
 
                 curr_vis_pcd = node_graph.get_vis_pcd(fix_pts_idx=np.arange(len(branch_pcd.points)))
                 o3d.visualization.draw_geometries([rest_pcd, curr_sim_pcd, curr_vis_pcd] + arrow_lst)
-
                 merged_pcd = curr_vis_pcd + fit_fruit_pcd #+ arm_pcd
                 # o3d.visualization.draw_geometries([merged_pcd, fruit_pcd, leaf_pcd, branch_pcd, arm_pcd])
                 
@@ -145,12 +143,15 @@ if __name__ == '__main__':
                 vis_points, octo_points = octomap_wrapper.compute_visible_points(merged_pcd, fit_fruit_pcd, cam_center,
                                                                                  octomap_config['voxel_size'], verbose=True)
                 print('ray casting number visible points:', len(vis_points))
-                np.save(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_num_vis_pts.npy', len(vis_points))
+                final_number_visible_pts_dict[f'{grasp_id:02d}_{move_id:02d}'] = len(vis_points)
                 """End of ray casting to compute visible points"""
 
                 # if len(vis_points) >= all_vis_fit_fruit_pts_num * args.max_visible_pts_rate:
                 #     print('INFO: reach maximum visible points rate:', len(vis_points) / all_vis_fit_fruit_pts_num)
                 #     # break
-
-            final_energy_lst.append(f'{grasp_id:02d}_{move_id:02d}')
-            final_number_visible_pts_lst.append(f'{grasp_id:02d}_{move_id:02d}')
+    
+    with open(sim_out_dir / 'final_energy.json', 'w') as f:
+        json.dump(final_energy_dict, f, indent=2)
+    
+    with open(sim_out_dir / 'final_number_visible_pts.json', 'w') as f:
+        json.dump(final_number_visible_pts_dict, f, indent=2)
