@@ -5,6 +5,33 @@ from typing import List
 from .pts_utils import pca_points, remove_close_points, sample_points_on_hull
 from .vis_utils import plot_hull_pts, display_inlier_outlier
 
+from dataclasses import dataclass
+
+@dataclass
+class GraspPlannerConfig:
+    """
+    Configurations for the grasp planner.
+    """
+    obstacle_distance_threshold: float = 0.06
+    """ Minimum distance to the obstacle point cloud."""
+    object_boundary_threshold: float = 0.01
+    """ Distance to the boundary of the leaf object."""
+    approach_distance: float = 0.01
+    """ Distance from the grasp point to the approach point."""
+    num_cvx_samples: int = 100
+    """ Number of samples to take on the convex hull of the object."""
+
+@dataclass
+class PullActionConfig:
+    """
+    Configurations for the pull action.
+    """
+    move_min_dist: float
+    """ Minimum distance for the pull action."""
+    move_max_dist: float
+    """ Maximum distance for the pull action."""
+    move_steps: int
+    """ Number of steps for the pull action."""
 
 class GraspPlanner:
     """
@@ -19,14 +46,17 @@ class GraspPlanner:
         object_boundary_threshold (float): Distance to the boundary of the leaf object
         approach_distance (float): Distance from the grasp point to the approach point.
     """
-    def __init__(self, obstacle_pcd, obstacle_distance_threshold=0.06, 
-                 object_boundary_threshold=0.01, approach_distance=0.01):
+    def __init__(self, obstacle_pcd, config: GraspPlannerConfig):
         # env_pcd is the point cloud of the environment
         self.obstacle_pcd = obstacle_pcd
-        self.obstacle_distance_threshold = obstacle_distance_threshold
-
-        self.object_boundary_threshold = object_boundary_threshold
-        self.approach_distance = approach_distance
+        
+        self.obstacle_distance_threshold = config.obstacle_distance_threshold
+        self.object_boundary_threshold = config.object_boundary_threshold
+        self.approach_distance = config.approach_distance
+        self.num_cvx_samples = config.num_cvx_samples
+        # self.obstacle_distance_threshold = obstacle_distance_threshold
+        # self.object_boundary_threshold = object_boundary_threshold
+        # self.approach_distance = approach_distance
     
     def sample_plane_points(self, obj_pcd, num_cvx_samples=100, vis_cvx_hull=False):
         """
@@ -134,7 +164,7 @@ class GraspPlanner:
         line_set.lines = o3d.utility.Vector2iVector(np.array([[i, i+num_pts] for i in range(num_pts)]))
         o3d.visualization.draw_geometries([clean_sampled_pcd, approach_pcd, env_pcd, line_set], point_show_normal=True)
 
-    def plan_grasp_leaf(self, leaf_pcd, num_cvx_samples=100, vis_cvx_hull=False, 
+    def plan_grasp_leaf(self, leaf_pcd, vis_cvx_hull=False, 
                         vis_approach_pts=False, vis_grasp_frame=False, 
                         vis_remove_outliers=False) -> List[np.ndarray]:
         """
@@ -158,7 +188,7 @@ class GraspPlanner:
         leaf_pcd_copy = leaf_pcd_copy.select_by_index(ind)
 
         # sample grasp points on fitted plane
-        plane_info_dict = self.sample_plane_points(leaf_pcd_copy, num_cvx_samples, vis_cvx_hull=vis_cvx_hull)
+        plane_info_dict = self.sample_plane_points(leaf_pcd_copy, self.num_cvx_samples, vis_cvx_hull=vis_cvx_hull)
         clean_sampled_pcd = plane_info_dict['clean_sampled_pcd']
         centroid, plane_normal = plane_info_dict['centroid'], plane_info_dict['plane_normal']
 
