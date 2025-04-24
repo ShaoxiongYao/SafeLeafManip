@@ -15,11 +15,12 @@ import copy
 import context
 from ssc_lmap.segment_plant import CLASSES
 from ssc_lmap.grasp_planner import GraspPlanner, GraspPlannerConfig
+from ssc_lmap.octomap_wrapper import OctomapWrapper
 from ssc_lmap.vis_utils import create_ball, create_arrow_lst, bool2color
-from ssc_lmap.vis_utils import gen_trans_box, image_plane2pcd, create_ball
+from ssc_lmap.vis_utils import gen_trans_box, image_plane2pcd, create_ball, vis_grasp_frames
 
 from ssc_lmap.pts_utils import trans_matrix2pose, get_largest_dbscan_component, get_discrete_move_directions
-from ssc_lmap.embed_deform_graph import prepare_sim_obj, NodeGraph
+from ssc_lmap.embed_deform_graph import NodeGraph, make_embed_deform_graph
 from yaml import safe_load
 import dacite
 
@@ -66,9 +67,9 @@ if __name__ == '__main__':
     cam_center = cam2rob_trans[:3, 3]
     
     # Prepare configurations for shape completion
-    shape_complete_config = safe_load(open(args.shape_complete_config, 'r'))
-    preprocess_config = shape_complete_config['preprocess']
-    grasp_planner_config = dacite.from_dict(GraspPlannerConfig, shape_complete_config['grasp_planner'])
+    simulate_action_config = safe_load(open(args.simulate_action_config, 'r'))
+    preprocess_config = simulate_action_config['preprocess']
+    grasp_planner_config = dacite.from_dict(GraspPlannerConfig, simulate_action_config['grasp_planner'])
     # free_space_config = dacite.from_dict(FreeSpaceConfig, shape_complete_config['free_space'])
     # branch_completion_config = dacite.from_dict(BranchCompletionConfig, shape_complete_config['branch_completion'])
     # fruit_completion_config = dacite.from_dict(FruitCompletionConfig, shape_complete_config['fruit_completion'])
@@ -98,67 +99,51 @@ if __name__ == '__main__':
                                                     vis_grasp_frame=False, vis_remove_outliers=False)
     print('number of grasp frames:', len(grasp_frame_lst))
 
-    leaf_center = np.array(leaf_pcd.get_center())
-    pregrasp_frame_lst = []
-    for grasp_frame in grasp_frame_lst:
-        pregrasp_frame = np.copy(grasp_frame)
-        backward_direction = pregrasp_frame[:3, 3] - leaf_center
-        backward_direction /= np.linalg.norm(backward_direction)
-        pregrasp_frame[:3, 3] += args.pregrasp_dis * backward_direction
-        pregrasp_frame_lst.append(pregrasp_frame)
-
-    all_grasp_coord_frame_lst = []
-    all_pregrasp_coord_frame_lst = []
-    all_grasp_ball_lst = []
-    for grasp_id, grasp_frame in enumerate(grasp_frame_lst):
-        grasp_coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.04)
-        pregrasp_coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.04)
-        grasp_coord_frame.transform(grasp_frame)
-        all_grasp_coord_frame_lst.append(grasp_coord_frame)
-        pregrasp_coord_frame.transform(pregrasp_frame_lst[grasp_id])
-        all_pregrasp_coord_frame_lst.append(pregrasp_coord_frame)
-        all_grasp_ball_lst.append(create_ball(radius=0.01, color=[0.9, 0.3, 0.0], center=grasp_frame[:3, 3]))
-    
-    o3d.visualization.draw_geometries([leaf_pcd, branch_pcd, fruit_pcd] + all_grasp_ball_lst + 
-                                      all_pregrasp_coord_frame_lst + all_grasp_coord_frame_lst, **view_params)
+    # Visualize grasp frames
+    grasp_geom_list = vis_grasp_frames(grasp_frame_lst)
+    o3d.visualization.draw_geometries([leaf_pcd, branch_pcd, fruit_pcd] + grasp_geom_list, **view_params)
 
     sim_out_dir = Path(args.sim_out_dir)
     sim_out_dir.mkdir(parents=True, exist_ok=True)
     
     move_vec_ary = get_discrete_move_directions('3D-6directions')
+    
+    octomap_wrapper = OctomapWrapper()
 
     final_energy_lst = []
     final_number_visible_pts_lst = []
     for grasp_id, grasp_frame in enumerate(grasp_frame_lst):
 
         precompute_start_time = time.time()
+        
+        # Prepare embedded deformation graph simulation
+        node_graph = make_embed_deform_graph(grasp_frame, branch_pcd, leaf_pcd, 
+                                             args.num_box_pts, args.close_branch_distance, 
+                                             args.graph_voxel_size, nn_radius=args.nn_radius, 
+                                             # verbose=False
+                                             verbose=True
+                                             )
 
-        box_start_pcd = gen_trans_box(0.025, args.num_box_pts, grasp_frame)
-        # Prepare object points
-        all_vis_pcd, all_sim_pts, handle_idx, connect_ary, edge_weights = prepare_sim_obj(box_start_pcd, branch_pcd, leaf_pcd, 
-                                                                                          args.close_branch_distance, args.graph_voxel_size,
-                                                                                          nn_radius=args.nn_radius, 
-                                                                                          # verbose=False
-                                                                                          verbose=True
-                                                                                          )
-        all_vis_pts = np.array(all_vis_pcd.points)
-
-        # edge_weights = np.ones(len(connect_ary))
-        node_graph = NodeGraph(all_sim_pts, connect_ary, edge_weights=edge_weights, corotate=True, device='cuda')
         rest_pcd = node_graph.get_pcd()
         rest_pcd.paint_uniform_color([0.7, 0.0, 0.7])
 
         print('number of nodes:', node_graph.num_pts)
         print('number of edges:', node_graph.num_edges)
         
+        all_vis_pts = node_graph.vis_pts
+        all_sim_pts = node_graph.rest_pts_tsr.cpu().numpy()
+        handle_idx = node_graph.handle_idx
+        all_vis_pcd = o3d.geometry.PointCloud()
+        all_vis_pcd.points = o3d.utility.Vector3dVector(all_vis_pts)
+        
         vis_beta = node_graph.get_pts_beta(all_vis_pts, rbf_sig=0.3, dist_max=0.05)
 
         line_set = node_graph.get_line_set()
         o3d.visualization.draw_geometries([line_set])
 
-        if args.deform_optimizer == 'inverse' or args.deform_optimizer == 'inverse_plus_adam':
-            # Setup handle index in graph, precompute Lapaclacian matrix and its inverse
-            node_graph.set_handle_idx(handle_idx)
+        # if args.deform_optimizer == 'inverse' or args.deform_optimizer == 'inverse_plus_adam':
+        #     # Setup handle index in graph, precompute Lapaclacian matrix and its inverse
+        #     node_graph.set_handle_idx(handle_idx)
         
         precompute_end_time = time.time()
         print('precompute time:', precompute_end_time - precompute_start_time)
@@ -196,7 +181,7 @@ if __name__ == '__main__':
                 # o3d.visualization.draw_geometries([branch_pcd, completed_branch_mesh, leaf_pcd, box_start_pcd, grasp_coord_frame] + arrow_lst)
 
                 geom = node_graph.get_pcd(handle_idx=handle_idx, handle_pts_tsr=handle_pts_tsr)
-                o3d.visualization.draw_geometries([rest_pcd, geom] + arrow_lst)
+                # o3d.visualization.draw_geometries([rest_pcd, geom] + arrow_lst)
 
                 sim_start_time = time.time()
                 start_time = time.time()
@@ -204,8 +189,11 @@ if __name__ == '__main__':
 
                 with torch.no_grad():
                     energy_list = node_graph.solve_global_local(handle_idx, handle_pts_tsr, num_iters=args.deform_iters,
-                                                                energy_converge_threshold=args.energy_converge_threshold, verbose=False)
+                                                                energy_converge_threshold=args.energy_converge_threshold, verbose=True)
                 energy = node_graph.energy(handle_idx, handle_pts_tsr)
+                
+                deformed_pcd = node_graph.get_pcd(handle_idx=handle_idx, handle_pts_tsr=handle_pts_tsr)
+                o3d.visualization.draw_geometries([rest_pcd, deformed_pcd] + arrow_lst)
 
                 np.save(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_{args.deform_optimizer}_debug_energy_list.npy', energy_list)
                 print('optimization time:', time.time() - start_time)
@@ -228,65 +216,29 @@ if __name__ == '__main__':
                 curr_pcd = node_graph.get_pcd(handle_idx, handle_pts_tsr)
                 curr_pcd.paint_uniform_color([0.0, 1.0, 0.0])
                 o3d.io.write_point_cloud(str(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_curr_pts_pcd.ply'), curr_pcd)
-                # o3d.visualization.draw_geometries([rest_pcd, curr_pcd] + arrow_lst)
+                o3d.visualization.draw_geometries([rest_pcd, curr_pcd, all_vis_pcd] + arrow_lst)
 
                 # o3d.io.write_point_cloud(str(plan_move_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_arm_pcd.ply'), arm_pcd)
 
                 merged_pcd = all_vis_pcd + fit_fruit_pcd #+ arm_pcd
                 # o3d.visualization.draw_geometries([merged_pcd, fruit_pcd, leaf_pcd, branch_pcd, arm_pcd])
-
-                octomap_start_time = time.time()
-
-                # copy a octomap scene to add fit points and arm pcd for ray tracing 
-                octomap_scene_copy = octomap.OcTree(args.voxel_size)
-                for pcd_pt in np.array(merged_pcd.points):
-                    octo_pt_key = octomap_scene_copy.coordToKey(pcd_pt)
-                    octomap_scene_copy.updateNode(octo_pt_key, octomap_scene_copy.getProbHitLog(), True)
-                octomap_scene_copy.updateInnerOccupancy()
                 
-                # Ray tracing to check if the points are visible
-                start_time = time.time()
-                vis_dict= dict()
-                octo_pts = []
-                for pcd_pt in np.array(fit_fruit_pcd.points):
-                    octo_pt_key = octomap_scene_copy.coordToKey(pcd_pt)
-                    if tuple([octo_pt_key[0], octo_pt_key[1], octo_pt_key[2]]) in vis_dict:
-                        continue
-                    octo_pt = octomap_scene_copy.keyToCoord(octo_pt_key)
-                    octo_pts.append(octo_pt)
-                    # do ray tracing to check if the point is visible
-                    origin = octomap_scene_copy.keyToCoord(octomap_scene_copy.coordToKey(cam_center))
-                    direction = octo_pt - origin
-                    direction /= np.linalg.norm(direction)
-                    end_pt = origin
-                    hit = octomap_scene_copy.castRay(origin, direction, end_pt, True, 1.5) 
-                    if hit:
-                        end_pt_key = octomap_scene_copy.coordToKey(end_pt)
-                        if end_pt_key == octo_pt_key:
-                            octo_pt_tuple = tuple([octo_pt_key[0], octo_pt_key[1], octo_pt_key[2]])
-                            vis_dict[octo_pt_tuple] = 1
-                print('ray tracing time:', time.time() - start_time)
+                vis_points, octo_points = octomap_wrapper.compute_visible_points(merged_pcd, fit_fruit_pcd, cam_center,
+                                                                                 args.voxel_size, verbose=False)
 
-                cam_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
-                cam_frame.transform(cam2rob_trans)
-
-                vis_points = []
-                for k in vis_dict.keys():
-                    octo_k = octomap.OcTreeKey()
-                    octo_k[0] = k[0]
-                    octo_k[1] = k[1]
-                    octo_k[2] = k[2]
-                    vis_points.append(octomap_scene_copy.keyToCoord(octo_k))
-                vis_points = np.array(vis_points)
                 print('ray casting number visible points:', len(vis_points))
                 np.save(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_num_vis_pts.npy', len(vis_points))
 
+                cam_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
+                cam_frame.transform(cam2rob_trans)
                 # final_number_visible_pts_lst.append(len(vis_points))
 
                 # if f'grasp_{grasp_id:02d}_move_{move_id:02d}_octomap_time' not in time_stats_dict:
                 #     time_stats_dict[f'grasp_{grasp_id:02d}_move_{move_id:02d}_octomap_time'] = 0.0
                 # else:
                 #     time_stats_dict[f'grasp_{grasp_id:02d}_move_{move_id:02d}_octomap_time'] += time.time() - octomap_start_time
+
+        
 
                 if len(vis_points) == 0:
                     print('INFO: no visible points')
@@ -296,7 +248,7 @@ if __name__ == '__main__':
                     vis_pcd.points = o3d.utility.Vector3dVector(np.asarray(vis_points))
                     vis_pcd.paint_uniform_color([0.7, 0.7, 0.0])
                     octo_pcd = o3d.geometry.PointCloud()
-                    octo_pcd.points = o3d.utility.Vector3dVector(np.asarray(octo_pts))
+                    octo_pcd.points = o3d.utility.Vector3dVector(np.asarray(octo_points))
                     octo_pcd.paint_uniform_color([0.0, 0.7, 0.7])
                     o3d.visualization.draw_geometries([octo_pcd, vis_pcd, cam_frame, all_vis_pcd])
 
