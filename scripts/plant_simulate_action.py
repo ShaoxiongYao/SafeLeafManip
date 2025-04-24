@@ -91,7 +91,7 @@ if __name__ == '__main__':
     sim_out_dir = Path(args.sim_out_dir)
     sim_out_dir.mkdir(parents=True, exist_ok=True)
     
-    move_vec_ary = get_discrete_move_directions('3D-6directions')
+    move_vec_ary = get_discrete_move_directions(action_config.move_type)
     
     octomap_wrapper = OctomapWrapper()
 
@@ -107,14 +107,7 @@ if __name__ == '__main__':
                                              simulator_config.graph_voxel_size, simulator_config.nn_radius)
 
         rest_pcd = node_graph.get_pcd()
-        rest_pcd.paint_uniform_color([0.7, 0.0, 0.7])
-
-        print('number of nodes:', node_graph.num_pts)
-        print('number of edges:', node_graph.num_edges)
-        
-        all_sim_pts = node_graph.rest_pts_tsr.cpu().numpy()
-        handle_idx = node_graph.handle_idx
-
+        rest_pcd.paint_uniform_color([0.7, 0.0, 0.7])        
         line_set = node_graph.get_line_set()
         o3d.visualization.draw_geometries([line_set])
         
@@ -122,12 +115,11 @@ if __name__ == '__main__':
         print('precompute time:', precompute_end_time - precompute_start_time)
         time_stats_dict[f'grasp_{grasp_id:02d}_precompute_time'] = precompute_end_time - precompute_start_time
 
-        for move_id, local_move_vec in enumerate(move_vec_ary):
+        for move_id, move_dir in enumerate(move_vec_ary):
 
-            world_move_vec = local_move_vec.copy()
+            move_dir_tsr = torch.from_numpy(move_dir).to(**node_graph.tsr_params)
 
-            np.save(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_local_move_vec.npy', local_move_vec)
-            print('local move vec:', local_move_vec)
+            np.save(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_move_direction.npy', move_dir)
 
             # reset the state of the graph to the initial state
             node_graph.reset_state()
@@ -136,57 +128,46 @@ if __name__ == '__main__':
                                                 action_config.move_max_dist, 
                                                 num=action_config.move_steps):
 
-                move_start_time = time.time()
-
-                np.save(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_world_move_vec.npy', 
-                        move_step_length*world_move_vec)
+                np.save(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_move_vector.npy', 
+                        (move_step_length*move_dir_tsr).cpu().numpy())
                 
                 # Prepare moved handle points for simulation
-                current_points = all_sim_pts[node_graph.handle_idx].copy()
-                current_points[:simulator_config.num_box_pts] += move_step_length * world_move_vec
-                handle_pts_tsr = torch.tensor(current_points, dtype=torch.double, device='cuda')
-
-                sim_start_time = time.time()
-                start_time = time.time()
+                handle_pts_tsr = node_graph.rest_pts_tsr[node_graph.handle_idx].clone()
+                handle_pts_tsr[:simulator_config.num_box_pts] += move_step_length * move_dir_tsr
 
                 with torch.no_grad():
-                    energy_list = node_graph.solve_global_local(handle_idx, handle_pts_tsr, simulator_config.deform_iters,
+                    energy_list = node_graph.solve_global_local(node_graph.handle_idx, handle_pts_tsr, simulator_config.deform_iters,
                                                                 simulator_config.energy_converge_threshold, verbose=True)
-                energy = node_graph.energy(handle_idx, handle_pts_tsr)
-                
-                deformed_pcd = node_graph.get_pcd(handle_idx=handle_idx, handle_pts_tsr=handle_pts_tsr)
-                arrow_lst = create_arrow_lst(all_sim_pts[handle_idx], handle_pts_tsr.detach().cpu().numpy())
-                o3d.visualization.draw_geometries([rest_pcd, deformed_pcd] + arrow_lst)
-
                 np.save(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_debug_energy_list.npy', energy_list)
-                print('optimization time:', time.time() - start_time)
-                print('final energy:', energy.item())
-
+                energy = node_graph.energy(node_graph.handle_idx, handle_pts_tsr)
                 np.save(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_energy.npy', energy.item())
-
+                final_energy_lst.append(energy.item())
+                
+                # Visualize energy changes
                 # plt.plot(energy_list)
                 # plt.show()
-                final_energy_lst.append(energy.item())
+                
+                # Visualize deformed graph
+                curr_sim_pcd = node_graph.get_pcd(handle_idx=node_graph.handle_idx, handle_pts_tsr=handle_pts_tsr)
+                curr_sim_pcd.paint_uniform_color([0.0, 1.0, 0.0])
+                arrow_lst = create_arrow_lst(node_graph.rest_pts_tsr[node_graph.handle_idx].detach().cpu().numpy(), 
+                                             handle_pts_tsr.detach().cpu().numpy())
+                o3d.visualization.draw_geometries([rest_pcd, curr_sim_pcd] + arrow_lst)
 
-                all_vis_pcd = node_graph.get_vis_pcd(fix_pts_idx=np.arange(len(branch_pcd.points)))
-                o3d.io.write_point_cloud(str(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_all_vis_pcd.ply'), all_vis_pcd)
+                curr_vis_pcd = node_graph.get_vis_pcd(fix_pts_idx=np.arange(len(branch_pcd.points)))
+                o3d.io.write_point_cloud(str(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_curr_vis_pcd.ply'), curr_vis_pcd)
+                o3d.io.write_point_cloud(str(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_curr_sim_pcd.ply'), curr_sim_pcd)
+                o3d.visualization.draw_geometries([rest_pcd, curr_sim_pcd, curr_vis_pcd] + arrow_lst)
 
-                curr_pcd = node_graph.get_pcd(handle_idx, handle_pts_tsr)
-                curr_pcd.paint_uniform_color([0.0, 1.0, 0.0])
-                o3d.io.write_point_cloud(str(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_curr_pts_pcd.ply'), curr_pcd)
-                o3d.visualization.draw_geometries([rest_pcd, curr_pcd, all_vis_pcd] + arrow_lst)
-
-                # o3d.io.write_point_cloud(str(plan_move_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_arm_pcd.ply'), arm_pcd)
-
-                merged_pcd = all_vis_pcd + fit_fruit_pcd #+ arm_pcd
+                merged_pcd = curr_vis_pcd + fit_fruit_pcd #+ arm_pcd
                 # o3d.visualization.draw_geometries([merged_pcd, fruit_pcd, leaf_pcd, branch_pcd, arm_pcd])
                 
+                """Ray casting to compute visible points"""
                 vis_points, octo_points = octomap_wrapper.compute_visible_points(merged_pcd, fit_fruit_pcd, cam_center,
                                                                                  octomap_config['voxel_size'], verbose=False)
-
                 print('ray casting number visible points:', len(vis_points))
                 np.save(sim_out_dir / f'grasp_{grasp_id:02d}_move_{move_id:02d}_num_vis_pts.npy', len(vis_points))
-
+                """End of ray casting to compute visible points"""
 
                 if len(vis_points) == 0:
                     print('INFO: no visible points')
@@ -200,7 +181,7 @@ if __name__ == '__main__':
                     octo_pcd.paint_uniform_color([0.0, 0.7, 0.7])
                     cam_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
                     cam_frame.transform(cam2rob_trans)
-                    o3d.visualization.draw_geometries([octo_pcd, vis_pcd, cam_frame, all_vis_pcd])
+                    o3d.visualization.draw_geometries([octo_pcd, vis_pcd, cam_frame, curr_vis_pcd])
 
                 # if len(vis_points) >= all_vis_fit_fruit_pts_num * args.max_visible_pts_rate:
                 #     print('INFO: reach maximum visible points rate:', len(vis_points) / all_vis_fit_fruit_pts_num)
