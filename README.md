@@ -30,25 +30,15 @@ We address the challenge of **monitoring occluded fruits** in agricultural envir
 
 ### Dependencies
 
-Minimum required Python packages:
+We recommend installing the dependencies in a **virtual environment** (e.g., `venv` or `conda`) with **Python 3.9** to ensure compatibility.
 
-- `numpy`
-- `torch`
-- `pypose`
-- `open3d`
-- `dacite`
-- `octomap-python`
-
-### Conda Environment 
-
-To set up a conda environment with all dependencies, use the provided `environment.yaml`:
+Install the required packages using:
 
 ```bash
-conda env create -f environment.yaml
-conda activate ssc_lmap
+pip install -r requirements.txt
 ```
 
-### Installing `octomap-python`
+### Troubleshooting Installing `octomap-python`
 
 To install `octomap-python`, make sure to update your C++ compile flags before using pip:
 
@@ -118,7 +108,7 @@ You're now ready to run your control pipeline.
 
 We provide two demo scripts to illustrate the functionality of the framework.
 
-### Step 1: Download Test Data
+### Preparation: Download Test Data
 
 Download the `test_obj_100` folder from the following link:
 
