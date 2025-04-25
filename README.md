@@ -16,7 +16,7 @@
 
 This repository contains the official code implementation for our ICRA 2025 paper.
 
-We address the challenge of **monitoring occluded fruits** in agricultural environments. The provided functions enable robots to **autonomously plan grasp-and-pull actions** that enhance fruit visibility while minimizing leaf damage.
+We address the challenge of **monitoring occluded fruits** in agricultural environments. The provided functions enable robots to **autonomously plan grasp-and-pull actions** that maximize fruit visibility while minimizing leaf damage.
 
 ## Features
 
@@ -112,7 +112,7 @@ We provide two demo scripts to illustrate the functionality of the framework.
 
 Download the `test_obj_100` folder from the following link:
 
-🔗 [https://uofi.box.com/s/hu77m4usywjo0segpzuoxuvyw1gohl48](https://uofi.box.com/s/hu77m4usywjo0segpzuoxuvyw1gohl48)
+[https://uofi.box.com/s/hu77m4usywjo0segpzuoxuvyw1gohl48](https://uofi.box.com/s/hu77m4usywjo0segpzuoxuvyw1gohl48)
 
 Place the downloaded `test_obj_100` folder in your desired working directory.
 
