@@ -38,7 +38,8 @@ Install the required packages using:
 pip install -r requirements.txt
 ```
 
-### Troubleshooting Installing `octomap-python`
+<details>
+<summary> Troubleshooting Installing `octomap-python`</summary>
 
 To install `octomap-python`, make sure to update your C++ compile flags before using pip:
 
@@ -46,6 +47,7 @@ To install `octomap-python`, make sure to update your C++ compile flags before u
 export CXXFLAGS="-std=c++11"
 pip install octomap-python
 ```
+</details>
 
 The following modules are optional to run plant semantic segmentation and robot action validation:
 
