@@ -74,7 +74,8 @@ if __name__ == '__main__':
     time_stats_dict['branch_completion_time'] = end_time - start_time
     o3d.io.write_triangle_mesh(str(shape_complete_dir / 'completed_branch_mesh.ply'), completed_branch_mesh)
 
-    o3d.visualization.draw_geometries([completed_branch_pcd, branch_pcd, leaf_pcd, fruit_pcd, completed_branch_mesh])
+    o3d.visualization.draw_geometries([completed_branch_pcd, branch_pcd, leaf_pcd, fruit_pcd, completed_branch_mesh], 
+                                      window_name='Branch Completion Results, press q to exit')
     
     """Compute free space points using octomap"""
     octomap_wrapper = OctomapWrapper()
@@ -86,7 +87,8 @@ if __name__ == '__main__':
     free_space_pcd = o3d.geometry.PointCloud()
     free_space_pcd.points = o3d.utility.Vector3dVector(free_space_pts)
     
-    o3d.visualization.draw_geometries([free_space_pcd, fruit_pcd, branch_pcd, leaf_pcd], window_name='Free Space PCD')
+    o3d.visualization.draw_geometries([free_space_pcd, fruit_pcd, branch_pcd, leaf_pcd], 
+                                      window_name='Free Space PCD, press q to exit')
     o3d.io.write_point_cloud(str(shape_complete_dir / 'free_space_pcd.ply'), free_space_pcd)
     """End of compute free space points using octomap"""
 

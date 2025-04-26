@@ -420,7 +420,8 @@ class SceneConsistentDeepSDF:
         # Visualize the final shape mesh
         if verbose:
             o3d.visualization.draw_geometries([fruit_pcd, branch_pcd, original_branch_pcd, 
-                                               leaf_pcd, free_space_pcd, final_shape_mesh])
+                                               leaf_pcd, free_space_pcd, final_shape_mesh], 
+                                              window_name='Final Shape Mesh, press q to exit')
 
         self.t = t
         self.r = r
