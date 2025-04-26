@@ -106,7 +106,7 @@ class DeformState(nn.Module):
         edges_diff = curr_pts_tsr[edges_ary[:, 0], :] - curr_pts_tsr[edges_ary[:, 1], :]
         return edges_diff
 
-class NodeGraph:
+class EmbedDeformGraph:
     """
     Embedded deformation graph that can simulate points deformation by minimizing the ARAP energy.
     
@@ -587,7 +587,7 @@ class PlantSimulatorConfig:
 def make_embed_deform_graph(grasp_frame, branch_pcd, leaf_pcd, 
                             num_box_pts=25, close_branch_distance=0.05, 
                             graph_voxel_size=0.003, nn_radius=0.01, 
-                            leaf2branch_weight=100, verbose=False) -> NodeGraph:
+                            leaf2branch_weight=100, verbose=False) -> EmbedDeformGraph:
     """
     Prepare simulator object for the leaf and branch point clouds.
     
@@ -666,21 +666,21 @@ def make_embed_deform_graph(grasp_frame, branch_pcd, leaf_pcd,
     # return all_vis_pcd, all_sim_pts, handle_idx, connect_ary, edge_weights
 
     # edge_weights = np.ones(len(connect_ary))
-    node_graph = NodeGraph(all_sim_pts, connect_ary, edge_weights=edge_weights, 
+    emb_def_graph = EmbedDeformGraph(all_sim_pts, connect_ary, edge_weights=edge_weights, 
                            corotate=True, vis_pts=all_vis_pts, device='cuda')
-    node_graph.set_handle_idx(handle_idx)
+    emb_def_graph.set_handle_idx(handle_idx)
     
     if verbose:
-        print('number of nodes:', node_graph.num_pts)
-        print('number of edges:', node_graph.num_edges)
+        print('number of nodes:', emb_def_graph.num_pts)
+        print('number of edges:', emb_def_graph.num_edges)
     
-    return node_graph
+    return emb_def_graph
 
 if __name__ == '__main__':
     rest_pts = torch.zeros(5, 3)
     edges = torch.tensor([[0, 1], [1, 2], [2, 3], [3, 4], [1, 0], [2, 1], [3, 2], [4, 3]])
 
-    ng = NodeGraph(rest_pts, edges, corotate=True)
+    ng = EmbedDeformGraph(rest_pts, edges, corotate=True)
 
     handle_idx = torch.tensor([0, 3], dtype=torch.long)
     handle_pts = torch.tensor([[0.0, 0.3, -0.3], [0.0, 0.3, -0.3]], dtype=torch.double)

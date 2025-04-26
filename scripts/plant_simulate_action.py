@@ -22,7 +22,7 @@ from ssc_lmap.octomap_wrapper import OctomapWrapper
 from ssc_lmap.vis_utils import vis_grasp_frames
 
 from ssc_lmap.pts_utils import trans_matrix2pose, get_largest_dbscan_component, get_discrete_move_directions
-from ssc_lmap.embed_deform_graph import NodeGraph, make_embed_deform_graph, PlantSimulatorConfig
+from ssc_lmap.embed_deform_graph import EmbedDeformGraph, make_embed_deform_graph, PlantSimulatorConfig
 from yaml import safe_load
 import dacite
 
@@ -99,19 +99,19 @@ if __name__ == '__main__':
     for grasp_id, grasp_frame in enumerate(grasp_frame_lst):
         
         # Prepare embedded deformation graph simulation
-        node_graph = make_embed_deform_graph(grasp_frame, branch_pcd, leaf_pcd, 
-                                             simulator_config.num_box_pts, simulator_config.close_branch_distance,
-                                             simulator_config.graph_voxel_size, simulator_config.nn_radius)
+        emb_def_graph = make_embed_deform_graph(grasp_frame, branch_pcd, leaf_pcd, 
+                                                simulator_config.num_box_pts, simulator_config.close_branch_distance,
+                                                simulator_config.graph_voxel_size, simulator_config.nn_radius)
 
-        rest_pcd = node_graph.get_pcd()
+        rest_pcd = emb_def_graph.get_pcd()
         rest_pcd.paint_uniform_color([0.7, 0.0, 0.7])        
-        line_set = node_graph.get_line_set()
+        line_set = emb_def_graph.get_line_set()
         # o3d.visualization.draw_geometries([line_set], window_name='Created graph lines. Darker colors indicate stiffer edges. Press q to exit.')
 
         for move_id, move_dir_tsr in enumerate(all_move_dir_tsr):
 
             # reset the state of the graph to the initial state
-            node_graph.reset_state()
+            emb_def_graph.reset_state()
 
             for move_step_length in np.linspace(action_config.move_min_dist, 
                                                 action_config.move_max_dist, 
@@ -123,20 +123,20 @@ if __name__ == '__main__':
                 """Run embedded deformation graph simulation"""
                 # Prepare moved handle points for simulation
                 # TODO: find a better way to indicate movable handle points
-                handle_pts_tsr = node_graph.rest_pts_tsr[node_graph.handle_idx].clone()
+                handle_pts_tsr = emb_def_graph.rest_pts_tsr[emb_def_graph.handle_idx].clone()
                 handle_pts_tsr[:simulator_config.num_box_pts] += move_step_length * move_dir_tsr
 
                 with torch.no_grad():
-                    energy_list = node_graph.solve_global_local(node_graph.handle_idx, handle_pts_tsr, simulator_config.deform_iters,
-                                                                simulator_config.energy_converge_threshold, verbose=True)
-                energy = node_graph.energy(node_graph.handle_idx, handle_pts_tsr)
+                    energy_list = emb_def_graph.solve_global_local(emb_def_graph.handle_idx, handle_pts_tsr, simulator_config.deform_iters,
+                                                                   simulator_config.energy_converge_threshold, verbose=True)
+                energy = emb_def_graph.energy(emb_def_graph.handle_idx, handle_pts_tsr)
                 final_energy_dict[f'{grasp_id:02d}_{move_id:02d}'] = energy.item()
                 """End of run embedded deformation graph simulation"""
                 
                 # Visualize deformed graph
-                curr_sim_pcd = node_graph.get_pcd(node_graph.handle_idx, handle_pts_tsr, [0.0, 1.0, 0.0])
-                curr_vis_pcd = node_graph.get_vis_pcd(fix_pts_idx=np.arange(len(branch_pcd.points)))
-                arrow_lst = node_graph.get_deform_arrow_lst(node_graph.handle_idx, handle_pts_tsr)
+                curr_sim_pcd = emb_def_graph.get_pcd(emb_def_graph.handle_idx, handle_pts_tsr, [0.0, 1.0, 0.0])
+                curr_vis_pcd = emb_def_graph.get_vis_pcd(fix_pts_idx=np.arange(len(branch_pcd.points)))
+                arrow_lst = emb_def_graph.get_deform_arrow_lst(emb_def_graph.handle_idx, handle_pts_tsr)
                 o3d.visualization.draw_geometries([rest_pcd, curr_sim_pcd, curr_vis_pcd] + arrow_lst, 
                                                    window_name='Deformed leaf, press q to exit')
                 merged_pcd = curr_vis_pcd + fit_fruit_pcd #+ arm_pcd
