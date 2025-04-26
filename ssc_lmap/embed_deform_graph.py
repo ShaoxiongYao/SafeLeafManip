@@ -108,13 +108,25 @@ class DeformState(nn.Module):
 
 class EmbedDeformGraph:
     """
-    Embedded deformation graph that can simulate points deformation by minimizing the ARAP energy.
-    
-    This class is instantiated by a set of 3D points and a set of edges connecting the points.
-    Each edge has a weight associated with it, which is used to compute the energy of the deformation.
-    
-    
+    Embedded Deformation Graph for simulating point cloud deformation by minimizing the ARAP energy.
+
+    This class implements an embedded deformation graph, instantiated from a set of 3D points and 
+    a set of edges connecting these points. Each edge is assigned a weight, which contributes 
+    to the computation of the deformation energy. Given deformation of handle points, this class
+    optimizes the deformation of each point in the graph using a global-local optimization strategy
+    to minimize the As-Rigid-As-Possible (ARAP) energy. 
+
+    The implementation follows the method described in:
+    - W. Sumner, J. Schmid, and M. Pauly, "Embedded Deformation for Shape Manipulation," 
+      SIGGRAPH 2007. Association for Computing Machinery, New York, NY, USA. 
+
+    The global-local optimization strategy used for minimizing the As-Rigid-As-Possible (ARAP) energy 
+    is based on:
+    - O. Sorkine and M. Alexa, "As-Rigid-As-Possible Surface Modeling," 
+      Proceedings of the Fifth Eurographics Symposium on Geometry Processing (SGP '07), 
+      Eurographics Association, 2007, pp. 109-116.
     """
+        
     def __init__(self, rest_pts:np.ndarray, edges:np.ndarray, 
                  edge_weights:np.ndarray=None, corotate=False, 
                  num_nns:int=10, vis_pts:np.ndarray=None,
