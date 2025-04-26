@@ -82,7 +82,8 @@ if __name__ == '__main__':
 
     # Visualize grasp frames
     grasp_geom_list = vis_grasp_frames(grasp_frame_lst)
-    o3d.visualization.draw_geometries([leaf_pcd, branch_pcd, fruit_pcd] + grasp_geom_list, **view_params)
+    o3d.visualization.draw_geometries([leaf_pcd, branch_pcd, fruit_pcd] + grasp_geom_list, **view_params, 
+                                       window_name='Planned grasp frames, press q to exit')
     """End of planning grasps"""
 
     sim_out_dir = Path(args.sim_out_dir)
@@ -105,7 +106,7 @@ if __name__ == '__main__':
         rest_pcd = node_graph.get_pcd()
         rest_pcd.paint_uniform_color([0.7, 0.0, 0.7])        
         line_set = node_graph.get_line_set()
-        o3d.visualization.draw_geometries([line_set])
+        # o3d.visualization.draw_geometries([line_set], window_name='Created graph lines. Darker colors indicate stiffer edges. Press q to exit.')
 
         for move_id, move_dir_tsr in enumerate(all_move_dir_tsr):
 
@@ -134,11 +135,10 @@ if __name__ == '__main__':
                 
                 # Visualize deformed graph
                 curr_sim_pcd = node_graph.get_pcd(node_graph.handle_idx, handle_pts_tsr, [0.0, 1.0, 0.0])
-                arrow_lst = node_graph.get_deform_arrow_lst(node_graph.handle_idx, handle_pts_tsr)
-                o3d.visualization.draw_geometries([rest_pcd, curr_sim_pcd] + arrow_lst)
-
                 curr_vis_pcd = node_graph.get_vis_pcd(fix_pts_idx=np.arange(len(branch_pcd.points)))
-                o3d.visualization.draw_geometries([rest_pcd, curr_sim_pcd, curr_vis_pcd] + arrow_lst)
+                arrow_lst = node_graph.get_deform_arrow_lst(node_graph.handle_idx, handle_pts_tsr)
+                o3d.visualization.draw_geometries([rest_pcd, curr_sim_pcd, curr_vis_pcd] + arrow_lst, 
+                                                   window_name='Deformed leaf, press q to exit')
                 merged_pcd = curr_vis_pcd + fit_fruit_pcd #+ arm_pcd
                 # o3d.visualization.draw_geometries([merged_pcd, fruit_pcd, leaf_pcd, branch_pcd, arm_pcd])
                 

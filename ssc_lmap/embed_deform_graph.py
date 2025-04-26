@@ -642,7 +642,8 @@ def make_embed_deform_graph(grasp_frame, branch_pcd, leaf_pcd,
     line_set.points = o3d.utility.Vector3dVector(all_sim_pts)
     line_set.lines = o3d.utility.Vector2iVector(leaf2branch_edges)
     if verbose:
-        o3d.visualization.draw_geometries([line_set, leaf_pcd, branch_pcd])
+        o3d.visualization.draw_geometries([line_set, leaf_pcd, branch_pcd], 
+                                          window_name='Connected graph lines, press q to exit')
 
     print('number of handle points:', len(handle_idx))
     # Assign prior edge weights based on the relative position of the points

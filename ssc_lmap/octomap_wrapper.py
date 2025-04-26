@@ -177,6 +177,8 @@ class OctomapWrapper:
             octo_pcd.points = o3d.utility.Vector3dVector(np.asarray(octo_points))
             octo_pcd.paint_uniform_color([0.0, 0.7, 0.7])
             camera_ball = create_ball(radius=0.02, color=[1, 0, 0], center=cam_center)
-            o3d.visualization.draw_geometries([merged_pcd, octo_pcd, vis_pcd, camera_ball])
+            window_name = 'Ray tracing results. Yellow indicates visible points. Press q to exit.'
+            o3d.visualization.draw_geometries([merged_pcd, octo_pcd, vis_pcd, camera_ball], 
+                                              window_name=window_name)
         
         return vis_points, octo_pts
