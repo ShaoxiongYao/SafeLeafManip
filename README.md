@@ -28,6 +28,14 @@ We address the challenge of **monitoring occluded fruits** in agricultural envir
 
 ## Installation
 
+Clone a local copy of the repository with submodules by running:
+
+```bash
+git clone --recursive https://github.com/ShaoxiongYao/SafeLeafManip.git
+```
+
+The `--recursive` flag ensures that the `HortiMapping` submodule (from [https://github.com/ShaoxiongYao/HortiMapping.git](https://github.com/ShaoxiongYao/HortiMapping.git)) is also cloned automatically.
+
 ### Dependencies
 
 We recommend installing the dependencies in a **virtual environment** (e.g., `venv` or `conda`) with **Python 3.9** to ensure compatibility.
@@ -39,17 +47,33 @@ pip install -r requirements.txt
 ```
 
 <details>
-<summary> Troubleshooting Installing `octomap-python`</summary>
+<summary> Troubleshooting `octomap-python` Installation </summary>
 
-To install `octomap-python`, make sure to update your C++ compile flags before using pip:
+To install `octomap-python`, please follow the steps below:
+
+1. Install CMake essentials and required system libraries:
+
+```bash
+sudo apt-get install libqt5opengl5-dev libqt5svg5-dev build-essential cmake
+```
+
+2. Install a compatible version of CMake via pip:
+
+```bash
+pip install cmake==3.24.0
+```
+
+3. Update your C++ compiler flags before installing `octomap-python`:
 
 ```bash
 export CXXFLAGS="-std=c++11"
 pip install octomap-python
 ```
+
 </details>
 
-The following modules are optional to run plant semantic segmentation and robot action validation:
+The following modules are optional for running the provided scene-consistent shape completion and deformation simulation demos.
+However, they are required to run the plant semantic segmentation and robot action control simulation pipeline.
 
 <details>
 <summary>Prepare GroundedSAM Environment for Plant Segmentation</summary>
