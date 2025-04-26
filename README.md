@@ -175,6 +175,48 @@ python scripts/plant_simulate_action.py \
     --sim_out_dir "${DATA_DIR}/sim_out"
 ```
 
+
+## Code Structure
+
+Most core functions are located in the `ssc_lmap` folder. Below is a brief walkthrough of the key components provided by the library:
+
+### Core Modules
+- **`segment_plant.py`**:  
+  Wrapper around GroundedSAM to perform semantic segmentation on RGB images and project the results back to 3D point clouds.
+
+- **`branch_completion.py`**:  
+  Implements ARAP-based deformation to complete the branch shape starting from a cylindrical primitive.
+
+- **`scene_consistent_deepsdf.py`**:  
+  Scene-consistent shape completion of fruits using a pre-trained DeepSDF model.
+
+- **`grasp_planner.py`**:  
+  Plans grasping actions on segmented leaf point clouds.
+
+- **`embed_deform_graph.py`**:  
+  Simulates leaf deformation using an embedded deformation graph, following the methods in Sumner et al. (SIGGRAPH 2007) and Sorkine & Alexa (SGP 2007) for ARAP energy minimization.
+
+- **`octomap_wrapper.py`**:  
+  Provides a wrapper class for Octomap with two main functions: (1) computing free space from point cloud observations, and (2) performing ray-casting to calculate the visible surface area of fruits after deformation simulation.
+
+### Utilities
+- **`pts_utils.py`**:  
+  Utility functions for 3D point cloud computations.
+
+- **`vis_utils.py`**:  
+  Utility functions for visualizing segmentation and processing results.
+
+### Submodules
+- **HortiMapping (submodule)**:  
+  External repository cloned from Yue Pan et al. (IROS 2023) paper, used to load DeepSDF models of sweet peppers.
+
+### Robot Control
+- **`robot_control/` (folder)**:  
+  Contains scripts to interface with a UR5 robot and Robotiq gripper.  
+  *(Note: Robot control is not used in the current demos.)*
+
+
+
 ## References
 ```
 TODO: add refences when ICRA proceeding published.
