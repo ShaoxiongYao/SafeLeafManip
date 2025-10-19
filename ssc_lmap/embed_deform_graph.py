@@ -295,6 +295,9 @@ class EmbedDeformGraph:
 
         W_fh_mat = self.laplace_matrix[self.free_idx, :][:, handle_idx]
         self.rhs_bias = -W_fh_mat @ handle_pts
+
+        # HOTFIX: also set handle points deltas, which are not updated during global step
+        self.deform_state.delta_pts_tsr.data[handle_idx, :] = handle_pts - self.rest_pts_tsr[handle_idx, :]
     
     def solve_linear(self):
         """
