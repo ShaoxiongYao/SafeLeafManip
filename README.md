@@ -219,5 +219,12 @@ Most core functions are located in the `ssc_lmap` folder. Below is a brief walkt
 
 ## References
 ```
-TODO: add refences when ICRA proceeding published.
+@article{yao2025safeleafmanip,
+  title={Safe Leaf Manipulation for Accurate Shape and Pose Estimation of Occluded Fruits},
+  author={Shaoxiong Yao and Sicong Pan and Maren Bennewitz and Kris Hauser},
+  journal={2025 IEEE International Conference on Robotics and Automation (ICRA)},
+  year={2024},
+  pages={16795-16802},
+  url={https://api.semanticscholar.org/CorpusID:272911237}
+}
 ```
